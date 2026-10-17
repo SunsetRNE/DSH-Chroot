@@ -237,5 +237,12 @@ python3 tools/semver.py           # 只跑 Python 实现
 三个变异测试分别被抓到 —— 把 sh 的「数字段 < 字母段」写反、把 node 的「final > prerelease」写反、放行 prerelease 前导零。
 **一道永远绿的检查等于没有检查**，所以这三条变异测试要跟着一起维护。
 
-⚠️ **仍未闭环**：设备侧跑的是 toybox 的 sh，容器里只有 dash 与 bash。上线前必须在真机上跑一次
-`sh lib/semver-gate.sh check 0.2.0-rc.2`（device shell 通道禁 `sh`，要从 Root 管理器 / 终端入口跑）。
+⚠️ **仍未闭环：真机的 sh**。已只读核实设备上是 **mksh**（`/system/bin/sh` 是普通文件、含 mksh 标记、无 toybox 标记），
+而容器里只有 dash 与 bash。闭环方式：[tools/verify-gate-device.sh](../tools/verify-gate-device.sh) —— **单文件、自包含**
+（由 `tools/build-device-selftest.py` 把 `lib/semver-gate.sh` 的实现正文 + spec 的 76 条向量烘进去，
+所以"在手机上跑过的代码"就是"要用的那份实现"）。拷到手机执行 `sh verify-gate-device.sh`，期望 `RESULT ok 76/76`。
+
+```bash
+python3 tools/build-device-selftest.py           # 改完 lib 或 spec 后重新生成（CI 会校验没漂移）
+python3 tools/build-device-selftest.py --check
+```

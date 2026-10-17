@@ -26,7 +26,9 @@
    `--draft` 是因为 payload 的层 `sha256` 必须真正打过包才有值；不带 `--draft` 时生成器会因这唯一的占位报错 —— 这正是我们要的行为。
 1. ~~版本闸门：一张向量表 + 三份实现~~ ✅ **已完成（2026-10-17）**：[spec/gate-vectors.json](../spec/gate-vectors.json)（76 条向量）·
    Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；三个变异测试证明这道检查**会红**。
-   ⚠️ 唯一没闭环的：设备侧是 **toybox 的 sh**，容器里只有 dash / bash —— 上线前必须在真机上跑一次 `sh lib/semver-gate.sh check 0.2.0-rc.2`。
+   ⚠️ 唯一没闭环的：**真机的 sh**。已核实设备上是 **mksh**（`/system/bin/sh` 是普通文件、内含 mksh 标记、无 toybox 标记），
+   而容器里只有 dash / bash —— 闭环方式：把 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh)（**单文件、自包含、76 条向量内联**）
+   拷到手机，`sh verify-gate-device.sh`，期望 `RESULT ok 76/76`，并把"环境"几行贴回来。
 2. （可选，最便宜）在真正的 chroot 容器里跑 `sh tools/verify-pty.sh`，把 PTY 结论闭环；
 3. **写壳的骨架**：`manifest.json` + `dsh-update`（闸门已就绪，直接 `source lib/semver-gate.sh`）+ `service.sh`（flock / setsid / 环境钉死 / `DSH_HOME` 分离）+ `broker.py`（UDS 控制面 + 端口发布 + 反代 + providers 列表 + caps 扫描）；
 3. 挂载按 **ADR-009**：`bind(ro)` + `active` 指针，**不用 overlayfs**；

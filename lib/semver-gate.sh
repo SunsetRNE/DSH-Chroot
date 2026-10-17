@@ -26,6 +26,9 @@
 # 设计约束（ADR-013）: 纯 POSIX sh，不用 local / 数组 / [[ ]] / 花括号替换，
 # 因为设备侧是 Android 的 sh，不是 bash。
 
+# ===== 实现正文开始 =====
+# （以下到「实现正文结束」之间的内容，会被 tools/build-device-selftest.py 原样复制进单文件自检脚本）
+
 SG_MAJOR=
 SG_MINOR=
 SG_PATCH=
@@ -45,13 +48,16 @@ _sg_strcmp() { # $1 $2 -> SG_CMP
 
 # 数字比较：先比长度再比字典序，避开 shell 整型 64 位溢出
 _sg_numcmp() { # $1 $2 -> SG_CMP
-    if [ ${#1} -lt ${#2} ]; then
+    # 先落到具名变量：${#1} 不是 POSIX 写法，mksh 上可能不认（Android 的 /system/bin/sh 就是 mksh）
+    _sg_na=$1
+    _sg_nb=$2
+    if [ "${#_sg_na}" -lt "${#_sg_nb}" ]; then
         SG_CMP=-1
-    elif [ ${#1} -gt ${#2} ]; then
+    elif [ "${#_sg_na}" -gt "${#_sg_nb}" ]; then
         SG_CMP=1
-    elif [ "$1" = "$2" ]; then
+    elif [ "$_sg_na" = "$_sg_nb" ]; then
         SG_CMP=0
-    elif [ "$1" \< "$2" ]; then
+    elif [ "$_sg_na" \< "$_sg_nb" ]; then
         SG_CMP=-1
     else
         SG_CMP=1
@@ -299,6 +305,8 @@ semver_gate_main() {
             ;;
     esac
 }
+
+# ===== 实现正文结束 =====
 
 # 被直接执行时自动进入命令模式；被 source 时什么都不做
 case ${0##*/} in
