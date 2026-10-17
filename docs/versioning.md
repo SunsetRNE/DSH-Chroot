@@ -126,6 +126,7 @@ managedFeatures=<管理特性，逗号分隔，Root 管理器标签>   ← 语�
 | `build/module.prop` | 生成物 |
 | `build/manifest.json` | 生成物（从 [baseline/manifest.example.json](../baseline/manifest.example.json) 模板合并） |
 | `build/apk-version.properties` | 生成物（给 APK 构建读 `VERSION_CODE` / `VERSION_NAME`） |
+| [update.json](../update.json) | **手写但与真源强校验**（提交在仓库根：Root 管理器从这里检查更新；`version` / `versionCode` 必须与 `version.env` 一致） |
 
 ```bash
 python3 tools/gen-version.py --draft    # 生成到 build/（草稿：payload 的层 sha256 还没真值时必须带）
@@ -139,7 +140,8 @@ python3 tools/gen-version.py --check    # 只校验生成物是否与真源同�
 2. **占位检查是全文的**，不只看字段开头 —— `<账号>` 这种藏在 URL 中间的值、模板里的 `sha256:REPLACE_ME`、`待定` / `TBD` 都算（上一版只看 `startswith("<")`，会漏放 `UPDATE_JSON`）；
 3. `floor ≤ baked`、`recommended > baked` 由**真的 prerelease 感知比较**校验（§9），不是字符串比大小；
 4. `DSH_RECOMMENDED` 为空时**删除** `recommended` 键，不继承模板里遗留的旧值（上一版会让模板的幽灵版本 `0.2.1-rc.3` 原样进产物）；
-5. `--check` 在生成物与真源不一致时报**漂移**并 exit 1（例如有人手改了 `build/module.prop`）。
+5. `--check` 在生成物与真源不一致时报**漂移**并 exit 1（例如有人手改了 `build/module.prop`）；
+6. **`update.json` 与真源强校验** —— 它的 `version` / `versionCode` 必须等于生成结果，缺文件或不同步直接 exit 2（否则更新按钮会指向错的包）。
 
 APK 侧接入方式（二选一）：
 

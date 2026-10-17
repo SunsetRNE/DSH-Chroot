@@ -10,7 +10,8 @@
 设计原则:
   1. 缺值 / 占位一律报错，绝不替使用者编造版本号或名字；
   2. 占位检查覆盖全部字段（URL 中间的 <账号> 也算），并且检查生成物本身；
-  3. baked / floor / recommended 的关系用 semver 真比较，不用字符串比大小。
+  3. baked / floor / recommended 的关系用 semver 真比较，不用字符串比大小；
+  4. update.json（Root 管理器的检查更新入口）必须与 version / versionCode 同步。
 
 退出码: 0 成功 / 1 漂移（--check）/ 2 输入或产物不合规
 """
@@ -181,6 +182,38 @@ def compose_manifest(env, template_path, version):
     return json.dumps(strip_notes(data), ensure_ascii=False, indent=2) + "\n"
 
 
+def check_update_json(path, version, version_code, draft):
+    """update.json 是给 Root 管理器检查更新的文件，必须与版本身份同步（否则更新按钮指向错的包）。"""
+    if not os.path.exists(path):
+        msg = "缺少 update.json：模块的检查更新会 404"
+        if not draft:
+            die(msg + "（发布前必须补上；临时预览可加 --draft）")
+        return [msg]
+    try:
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+    except ValueError as exc:
+        die("update.json 不是合法 JSON: " + str(exc))
+
+    for key in ("version", "versionCode", "zipUrl"):
+        if not data.get(key) and data.get(key) != 0:
+            die("update.json 缺少字段: " + key)
+
+    if str(data["version"]) != version:
+        die("update.json 的 version(" + str(data["version"]) + ") 与 version.env 生成的 version("
+            + version + ") 不一致：改版本时两处必须同步")
+    if int(data["versionCode"]) != int(version_code):
+        die("update.json 的 versionCode(" + str(data["versionCode"]) + ") 与 version.env 的 VERSION_CODE("
+            + version_code + ") 不一致")
+
+    warnings = []
+    zip_url = str(data["zipUrl"])
+    if ("/download/v" + version + "/") not in zip_url:
+        warnings.append("update.json 的 zipUrl 里没有 /download/v" + version
+                        + "/ 这一段：按约定 tag 是 v<version>，请核对")
+    return warnings
+
+
 def scan_outputs(targets, draft):
     warnings = []
     for name, text in targets:
@@ -207,6 +240,7 @@ def main():
         (os.path.join(opts["out"], "manifest.json"), manifest),
         (os.path.join(opts["out"], "apk-version.properties"), apk),
     )
+    warnings += check_update_json(os.path.join(ROOT, "update.json"), version, env["VERSION_CODE"], opts["draft"])
     warnings += scan_outputs(targets, opts["draft"])
 
     if opts["check"]:
