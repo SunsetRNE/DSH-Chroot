@@ -1,6 +1,8 @@
 # module.prop 示例（规范见 docs/versioning.md）
 # 注意：本文件由 version.env 生成，不要手改（单一真源，见 versioning §5）
-# 下面这份就是 python3 tools/gen-version.py 的实际产物（逐字一致）
+# managedFeatures：阶段一不接管任何内核特性 → 留空（有真实实现才声明，且须与模块 config 的
+# manage.<feature>=true 成对，见 versioning §4.3）
+# 下面这份是 python3 tools/gen-version.py 的实际产物，逐字一致
 
 # 由 tools/gen-version.py 从 tools/version.env 生成 —— 不要手改
 # version 第 4 位为 1（内置基线 DSH 0.2.0-rc.2），只增不减
@@ -12,4 +14,3 @@ author=SunsetRNE
 description=DSH 的 Android root 模块：真 chroot（不是 proot）· 开机自启 + 版本闸门 + 局域网访问
 updateJson=https://raw.githubusercontent.com/SunsetRNE/DSH-Chroot/main/update.json
 # managedFeatures: 空（不接管任何内核特性）
-# （将来若真的接管挂载等特性，必须与模块 config 的 manage.<feature>=true 成对声明，见 versioning §4.3）
