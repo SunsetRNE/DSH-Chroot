@@ -23,6 +23,9 @@
   退出码 `0/10/20/30/40`；六条契约各自可测：非交互（stdin 钉 `/dev/null`）· 环境钉死 · 幂等 ·
   先停后换（切层前停实例）· 默认离线（`--offline`）· 机器可读标记 `DSH_SERVICE_*`。
   `tools/test-service.sh` 25 条断言在 dash 与 mksh 双端全绿；bootstrap 状态机按 ADR-024 实现（staging + 原子切指针）
+- **壳的第二块（dsh-ctl）**：唯一公开入口 —— 环境归一化 · 动词白名单（未知/未实现都明确报 2）·
+  cgroup 搬家（best-effort，四类 v1 控制器 + v2，**搬不动如实报**）· 审计日志 `log/ctl.log` · 原样 `exec` service.sh。
+  `tools/test-dsh-ctl.sh` 11 条断言全绿；在真机上跑可顺带验证 cgroup 搬家（ADR-019 的验收点）
 - 设计文档：ADR-001 ~ ADR-024 全部拍板；威胁模型含「不设防声明」
 - **ADR-024（payload 交付形态与首启自举）**：模块 zip 永不装 payload（只装 < 1 MB 的引导器）；
   首启由壳触发/执行/监督：离线 inbox 优先 → 否则 busybox wget 下载 → 校验 → staging 解压 → 原子切指针；

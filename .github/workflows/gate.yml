@@ -50,3 +50,7 @@ jobs:
 
       - name: 壳契约测试（mksh）
         run: mksh tools/test-service.sh
+
+      # 公开入口（dsh-ctl）：参数校验 / 审计 / 透传 / 环境归一化
+      - name: 入口契约测试（dash）
+        run: dash tools/test-dsh-ctl.sh

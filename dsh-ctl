@@ -1,0 +1,135 @@
+#!/system/bin/sh
+# dsh-ctl —— 壳的**唯一公开入口**（ADR-019 决定 A）
+#
+# 三层结构：
+#   [调用者] Root 管理器 / MT 管理器 / 终端 / 壳
+#        │
+#   [公开入口] dsh-ctl        ← 本文件：环境归一化 · 参数校验 · cgroup 搬家 · 审计
+#        │ exec，原样传参
+#   [执行者]   service.sh     ← ADR-013：唯一执行者
+#
+# 为什么要多这一层：**cgroup 是继承的** → 搬家必须发生在任何长期进程被 fork 之前。
+# 直接调 service.sh 就得把搬家塞进它开头（而开机正路根本不需要搬）；多一层入口，
+# 正好把"归一化 + 搬家"收在一处、**只在手动路径生效**。
+#
+# 用法:
+#     dsh-ctl <verb> [args]
+#
+# 动词（与 ADR-013/ADR-019 对齐；未知动词直接拒绝，不猜）:
+#     boot | start | stop | restart | status | logs [--tail N]
+#     bootstrap [--offline] | install <file> | help
+#     diag | repair | rebuild | upgrade <ver> | purge      ← 尚未实现，会明确报出来
+#
+# cgroup 搬家是 **best-effort + 必须报实情**（ADR-019 决定 B）：
+#     搬成功 -> 打印"已搬"；搬不动 -> 打印失败原因；**绝不假装成功**。
+#     开机正路（init → ksu/magiskd → service.sh）不需要搬家，本脚本会自动判定"无需搬"。
+
+set -u
+
+# ---------- 环境归一化（不继承调用者） ----------
+if [ -d /system/bin ]; then
+    PATH=/system/bin:/data/adb/ksu/bin
+else
+    PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+fi
+export PATH
+unset CDPATH ENV 2>/dev/null || true
+
+DSH_ROOT=${DSH_ROOT:-/data/local/dsh}
+RUN_DIR="$DSH_ROOT/run"
+LOG_DIR="$DSH_ROOT/log"
+AUDIT="$LOG_DIR/ctl.log"
+export DSH_ROOT
+mkdir -p "$RUN_DIR" "$LOG_DIR" 2>/dev/null || true
+TMPDIR="$RUN_DIR/tmp"; mkdir -p "$TMPDIR" 2>/dev/null || true
+HOME="$RUN_DIR"
+export TMPDIR HOME
+
+# ---------- 定位 service.sh ----------
+SELF_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
+SERVICE=""
+for cand in "$SELF_DIR/service.sh" "$SELF_DIR/../service.sh" "$DSH_ROOT/service.sh"; do
+    if [ -f "$cand" ]; then SERVICE=$cand; break; fi
+done
+if [ -z "$SERVICE" ]; then
+    printf 'dsh-ctl: 找不到 service.sh（找过 %s 及其上级）\n' "$SELF_DIR" >&2
+    exit 2
+fi
+
+audit() {
+    _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo '-')
+    printf '%s uid=%s pid=%s verb="%s"\n' "$_ts" "$(id -u 2>/dev/null || echo '?')" "$$" "$*" >>"$AUDIT" 2>/dev/null || true
+}
+
+# ---------- cgroup 搬家（best-effort，四类控制器 + cgroup v2） ----------
+cgroup_move() {
+    _moved=0
+    _failed=0
+    _skip=0
+    while IFS=: read -r _id _ctls _path; do
+        case $_id in ''|'#'*) continue ;; esac
+        if [ -z "$_ctls" ]; then
+            _mp="/sys/fs/cgroup"
+            _label="v2"
+        else
+            _ctl=${_ctls%%,*}
+            _label=$_ctl
+            _mp=$(awk -v c="$_ctl" '$3=="cgroup" && index($4,c)>0 {print $2; exit}' /proc/mounts 2>/dev/null)
+        fi
+        if [ -z "$_mp" ]; then
+            printf 'cgroup %-8s : 跳过（找不到挂载点）\n' "$_label"
+            _skip=$((_skip + 1))
+            continue
+        fi
+        case $_path in
+            */apps/*)
+                _tgt=${_path%%/apps/*}/apps
+                ;;
+            *)
+                printf 'cgroup %-8s : 无需搬（%s）\n' "$_label" "$_path"
+                _skip=$((_skip + 1))
+                continue
+                ;;
+        esac
+        if printf '%s\n' "$$" >"${_mp}${_tgt}/cgroup.procs" 2>/dev/null; then
+            printf 'cgroup %-8s : 已搬到 %s（原 %s）\n' "$_label" "${_tgt}" "$_path"
+            _moved=$((_moved + 1))
+        else
+            printf 'cgroup %-8s : ⚠️ 搬不动（原 %s → %s，权限或 SELinux 拦截）\n' "$_label" "$_path" "${_tgt}"
+            _failed=$((_failed + 1))
+        fi
+    done </proc/self/cgroup
+    if [ "$_failed" -gt 0 ]; then
+        printf 'cgroup: 搬成功 %d，失败 %d，无需搬 %d —— **未完全脱离 App 组**（ADR-019 要求如实报告）\n' \
+            "$_moved" "$_failed" "$_skip"
+    else
+        printf 'cgroup: 搬成功 %d，无需搬 %d\n' "$_moved" "$_skip"
+    fi
+}
+
+# ---------- 动词校验 ----------
+_verb=${1:-}
+case $_verb in
+    boot|start|stop|restart|status|bootstrap|install|logs|help|--help|-h|"") ;;
+    diag|repair|rebuild|upgrade|purge)
+        audit "$_verb"
+        printf 'dsh-ctl: 动词 "%s" 尚未实现（ADR-019 里已定，实现排在 service.sh 之后）\n' "$_verb" >&2
+        exit 2
+        ;;
+    *)
+        audit "ERROR:$_verb"
+        printf 'dsh-ctl: 未知动词 "%s"。可用: boot start stop restart status bootstrap install logs help\n' "$_verb" >&2
+        exit 2
+        ;;
+esac
+
+# ---------- 审计（exec 之前，保证失败也有记录） ----------
+audit "$_verb ${2-}"
+
+# ---------- cgroup 搬家只对手动路径有意义；boot 路径跳过 ----------
+if [ "$_verb" != "boot" ]; then
+    cgroup_move
+fi
+
+# ---------- exec，原样传参 ----------
+exec sh "$SERVICE" "$@"
