@@ -102,6 +102,12 @@
 - **为什么错**：`/data` 默认可能带 `nosuid,nodev,noexec`；chroot-distro 有 `fix-suid` 开关去 remount，**这会动宿主的挂载标志**。
 - **正确做法**：知情后再用；并且记住它和"用 ro bind 保护基线"是**互相影响**的两件事。
 
+### A20. 在 Android 的 sh（mksh）上用 `${s%%|*}` 切字段
+- **症状**：自检脚本在 dash / bash 上 76/76 全绿，拷到手机上却**每一条都落进 `*)` 分支**（`FAIL unknow`），而真正的比较逻辑明明对（人眼复核那三条都 ok）。
+- **为什么错**：**mksh 对参数展开里未加引号的 `|` 的处理与 dash/bash 不同** —— 实测（mksh R59，2026-10-17 真机 + 容器双端）：`${line%%|*}` 在 mksh 里返回**空串**，在 dash 里返回第一个字段。加引号的 `${line%%"|"*}` 在两边**都不匹配**（另一头坑）。这不是笔误，是方言：Android 的 `/system/bin/sh` 就是 mksh，**容器里那套 dash/bash 绿了不代表设备绿**。
+- **正确做法**：切字段用 `IFS='|'; set -- $x`（三端一致），或 `while IFS= read`；**带引号的变量**模式是安全的（`${line%%"$_tab"*}` 三端都正常，`lib/semver-gate.sh` 的 `batch` 就是这么写的）。凡是要在设备上跑的 sh 代码，**先在本机装个 mksh 跑一遍**（`apt-get install mksh`）。
+- **配套**：`tools/check-gate.py` 现在会**自动把 mksh 纳入**（装了就跑），CI 也装 mksh 跑一遍；真机自检脚本 `tools/verify-gate-device.sh` 就是这次踩坑的产物。
+
 ---
 
 # B. 进阶（Advance）——每一条都写了"触发条件"

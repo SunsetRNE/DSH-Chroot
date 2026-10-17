@@ -33,7 +33,7 @@ HEADER = '''#!/bin/sh
 #   - lib/semver-gate.sh        （实现正文，逐字复制）
 #   - spec/gate-vectors.json    （向量，逐条内联）
 #
-# 用法（在手机上，root 或普通 shell 都能跑）:
+# 用法（在手机上，root 或普通用户都行）:
 #     sh verify-gate-device.sh
 #
 # 期望最后一行:  RESULT ok 76/76
@@ -43,6 +43,9 @@ HEADER = '''#!/bin/sh
 # （Windows 编辑器、某些分享通道会干这事），先转过再跑：
 #     tr -d '\\r' < verify-gate-device.sh > /tmp/v.sh && sh /tmp/v.sh
 # ============================================================
+
+# 关掉路径名展开：向量里可能有意料之外的字符，不该被当成 glob 展开
+set -f
 
 echo "== 环境"
 _shell="unknown"
@@ -78,19 +81,21 @@ _PASS=0
 _FAIL=0
 _CR=$(printf '\\r')
 
-while IFS= read -r _line; do
-    [ -z "$_line" ] && continue
-    case $_line in
-        *"$_CR") _line=@@{_line%"$_CR"} ;;
-    esac
-    _kind=@@{_line%%|*}
-    _rest=@@{_line#*|}
-    _a=@@{_rest%%|*}
-    _rest=@@{_rest#*|}
+# 解析一条向量。为什么不写 @@{_line%%|*}：mksh（Android 的 /system/bin/sh）里
+# 未加引号的 | 在 @@{...} 模式里的行为与 dash/bash 不同 —— 实测会整段吞成空串。
+# 改用 IFS 拆分，三种 shell 上行为一致（2026-10-17 真机/容器双端验证）。
+_gate_one() {
+    _raw=$1
+    _ol=$IFS
+    IFS='|'
+    set -- $_raw
+    IFS=$_ol
+    _kind=@@{1-}
     case $_kind in
         compare)
-            _b=@@{_rest%%|*}
-            _want=@@{_rest#*|}
+            _a=@@{2-}
+            _b=@@{3-}
+            _want=@@{4-}
             _label="compare $_a $_b"
             if semver_cmp "$_a" "$_b"; then
                 _got=$SEMVER_CMP
@@ -99,16 +104,15 @@ while IFS= read -r _line; do
             fi
             ;;
         check)
-            _b=
-            _want=$_rest
+            _a=@@{2-}
+            _want=@@{3-}
             _label="check [$_a]"
             if semver_check "$_a"; then _got=ok; else _got=invalid; fi
             ;;
         *)
-            _b=
-            _want=?
-            _got=error
             _label=unknow
+            _got=error
+            _want=?
             ;;
     esac
     _TOTAL=$((_TOTAL + 1))
@@ -116,8 +120,16 @@ while IFS= read -r _line; do
         _PASS=$((_PASS + 1))
     else
         _FAIL=$((_FAIL + 1))
-        printf 'FAIL %s -> 期望 %s 实得 %s\n' "$_label" "$_want" "$_got"
+        printf 'FAIL %s -> 期望 %s 实得 %s | 原始行: %s\\n' "$_label" "$_want" "$_got" "$_raw"
     fi
+}
+
+while IFS= read -r _line; do
+    [ -z "$_line" ] && continue
+    case $_line in
+        *"$_CR") _line=@@{_line%"$_CR"} ;;
+    esac
+    _gate_one "$_line"
 done <<'GATE_VECTORS'
 @@{VECTORS}
 GATE_VECTORS

@@ -26,9 +26,9 @@
    `--draft` 是因为 payload 的层 `sha256` 必须真正打过包才有值；不带 `--draft` 时生成器会因这唯一的占位报错 —— 这正是我们要的行为。
 1. ~~版本闸门：一张向量表 + 三份实现~~ ✅ **已完成（2026-10-17）**：[spec/gate-vectors.json](../spec/gate-vectors.json)（76 条向量）·
    Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；三个变异测试证明这道检查**会红**。
-   ⚠️ 唯一没闭环的：**真机的 sh**。已核实设备上是 **mksh**（`/system/bin/sh` 是普通文件、内含 mksh 标记、无 toybox 标记），
-   而容器里只有 dash / bash —— 闭环方式：把 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh)（**单文件、自包含、76 条向量内联**）
-   拷到手机，`sh verify-gate-device.sh`，期望 `RESULT ok 76/76`，并把"环境"几行贴回来。
+   ✅ **真机已闭环（2026-10-17）**：设备是 **mksh R59**；首轮跑出**方言坑**（mksh 里 `${s%%|*}` 返回空串 → 向量行全部解析失败，
+   而实现本身是对的），修成 IFS 拆分后 mksh / dash / bash 三端一律 `RESULT ok 76/76`。
+   → 坑记在 [pitfalls A20](./pitfalls.md)；真机自检脚本 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh) 保留，以后每次改闸门都能一次性验三端。
 2. （可选，最便宜）在真正的 chroot 容器里跑 `sh tools/verify-pty.sh`，把 PTY 结论闭环；
 3. **写壳的骨架**：`manifest.json` + `dsh-update`（闸门已就绪，直接 `source lib/semver-gate.sh`）+ `service.sh`（flock / setsid / 环境钉死 / `DSH_HOME` 分离）+ `broker.py`（UDS 控制面 + 端口发布 + 反代 + providers 列表 + caps 扫描）；
 3. 挂载按 **ADR-009**：`bind(ro)` + `active` 指针，**不用 overlayfs**；
@@ -58,7 +58,7 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 3 | [docs/research.md](./research.md) | **研究文档**：目标、现状盘点、路线比较、架构、版本策略、端口/通信、缺口、未验证项 |
 | 4 | [docs/baseline.md](./baseline.md) | **基线**：Ubuntu 24.04 + Node 24 + **pnpm 11.x** + DSH 基线，含 libc 依赖审计与 manifest 规范 |
 | 5 | [docs/projects.md](./projects.md) | **涉及项目清单**：用/不用/备选，各自的角色与风险 |
-| 6 | [docs/pitfalls.md](./pitfalls.md) | **反例集**：会绕远路的做法（18 条）+ 值得进阶的方向（10 条） |
+| 6 | [docs/pitfalls.md](./pitfalls.md) | **反例集**：会绕远路的做法（19 条）+ 值得进阶的方向（10 条） |
 | 7 | [docs/decisions.md](./decisions.md) | **决策记录（ADR）**：已拍板的事 + 代价 + 重审触发 |
 | 8 | [docs/threat-model.md](./threat-model.md) | **威胁模型（归拢）**：资产 / 对手 / 六条边界 / 威胁↔ADR 对账 / **不设防声明** / 开着的口子 |
 | 9 | [docs/recovery.md](./recovery.md) | **刷机前的证据与回滚预案**（ARB 警告 / 包形态 / 抽分区 / 决策树） |
@@ -199,7 +199,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── research.md                 # 研究文档（目标 / 盘点 / 架构 / 策略 / 未验证项）
 │   ├── baseline.md                 # 基线定义 + libc 依赖审计 + manifest 规范
 │   ├── projects.md                 # 涉及项目清单（用 / 不用 / 备选）
-│   ├── pitfalls.md                 # 反例集：弯路 18 条 + 进阶 10 条
+│   ├── pitfalls.md                 # 反例集：弯路 19 条 + 进阶 10 条（A20 = mksh 的 `${s%%|*}` 坑）
 │   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-023
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）

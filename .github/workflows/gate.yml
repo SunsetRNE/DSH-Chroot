@@ -20,7 +20,11 @@ jobs:
         with:
           node-version: "24"
 
-      # 三份实现 × 一张表：任何一份与 spec 不一致就红
+      # Android 的 /system/bin/sh 就是 mksh：先在 CI 里装上，让交叉验证覆盖它
+      - name: 安装 mksh（真机同款 shell）
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq mksh
+
+      # 三份实现 × 一张表：任何一份与 spec 不一致就红（装了 mksh 就自动多跑一个）
       - name: 版本闸门三实现对照
         run: python3 tools/check-gate.py
 
@@ -34,6 +38,8 @@ jobs:
       - name: 设备自检脚本与源保持一致
         run: python3 tools/build-device-selftest.py --check
 
-      # 生成出来的单文件脚本本身也要能跑（在 CI 的 dash 上跑一遍 76 条）
+      # 生成出来的单文件脚本本身也要能跑（dash + mksh 各跑一遍 76 条）
       - name: 单文件自检脚本可运行
-        run: dash tools/verify-gate-device.sh
+        run: |
+          dash tools/verify-gate-device.sh
+          mksh tools/verify-gate-device.sh

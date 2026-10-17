@@ -14,6 +14,7 @@ spec/gate-vectors.json 是唯一规格；本脚本把表摊平成 TSV，喂给�
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,12 +27,21 @@ import semver  # noqa: E402
 
 
 def impls(tsv_path):
-    return [
+    """四个运行体；有 mksh 就再加一个（Android 的 /system/bin/sh 就是 mksh R59）。
+
+    mksh 值得单独列：它在 ${s%%|*} 这类参数模式上的行为与 dash/bash 不同，
+    本机全绿不代表设备全绿（2026-10-17 真机实测踩过）。
+    """
+    sh_lib = os.path.join("lib", "semver-gate.sh")
+    out = [
         ("python", [sys.executable, os.path.join("tools", "semver.py"), "--batch", tsv_path]),
-        ("sh/dash", ["dash", os.path.join("lib", "semver-gate.sh"), "batch", tsv_path]),
-        ("sh/bash", ["bash", "--posix", os.path.join("lib", "semver-gate.sh"), "batch", tsv_path]),
+        ("sh/dash", ["dash", sh_lib, "batch", tsv_path]),
+        ("sh/bash", ["bash", "--posix", sh_lib, "batch", tsv_path]),
         ("node", ["node", os.path.join("lib", "semver-gate.mjs"), "batch", tsv_path]),
     ]
+    if shutil.which("mksh"):
+        out.insert(3, ("sh/mksh", ["mksh", sh_lib, "batch", tsv_path]))
+    return out
 
 
 def main(argv):
