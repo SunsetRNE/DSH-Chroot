@@ -26,6 +26,9 @@
 - **壳的第二块（dsh-ctl）**：唯一公开入口 —— 环境归一化 · 动词白名单（未知/未实现都明确报 2）·
   cgroup 搬家（best-effort，四类 v1 控制器 + v2，**搬不动如实报**）· 审计日志 `log/ctl.log` · 原样 `exec` service.sh。
   `tools/test-dsh-ctl.sh` 11 条断言全绿；在真机上跑可顺带验证 cgroup 搬家（ADR-019 的验收点）
+- **payload 规范与打包器**：[docs/payload.md](docs/payload.md) 定两件套（`payload-<baked>.tar.gz` + `payload.json`）、
+  归档布局（`rootfs/` 可选 · `node/` · `dsh/` · `bin/`）、schema-1 字段、四道校验链；
+  `tools/build-payload.py` 做**确定性**构建（排序 / uid=0 / 固定 mtime / gzip mtime=0）+ `--verify` + `--selftest`（确定性 + 篡改检测）
 - 设计文档：ADR-001 ~ ADR-024 全部拍板；威胁模型含「不设防声明」
 - **ADR-024（payload 交付形态与首启自举）**：模块 zip 永不装 payload（只装 < 1 MB 的引导器）；
   首启由壳触发/执行/监督：离线 inbox 优先 → 否则 busybox wget 下载 → 校验 → staging 解压 → 原子切指针；

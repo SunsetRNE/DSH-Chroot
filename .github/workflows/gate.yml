@@ -54,3 +54,7 @@ jobs:
       # 公开入口（dsh-ctl）：参数校验 / 审计 / 透传 / 环境归一化
       - name: 入口契约测试（dash）
         run: dash tools/test-dsh-ctl.sh
+
+      # payload 打包器：确定性 + 校验 + 篡改检测
+      - name: payload 构建器自测
+        run: python3 tools/build-payload.py --selftest

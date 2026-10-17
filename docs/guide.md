@@ -64,6 +64,7 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 8 | [docs/threat-model.md](./threat-model.md) | **威胁模型（归拢）**：资产 / 对手 / 六条边界 / 威胁↔ADR 对账 / **不设防声明** / 开着的口子 |
 | 9 | [docs/recovery.md](./recovery.md) | **刷机前的证据与回滚预案**（ARB 警告 / 包形态 / 抽分区 / 决策树） |
 | 10 | [docs/versioning.md](./versioning.md) | **版本号与 module.prop 规范**（四位 version / versionCode / managedFeatures 真实语义 / 单一真源 / 命名分工） |
+| 11 | [docs/payload.md](./payload.md) | **payload 规范**：两件套 / 归档布局 / 字段 / 确定性构建 / 四道校验链 |
 | 11 | [baseline/manifest.example.json](../baseline/manifest.example.json) · [baseline/module.prop.example](../baseline/module.prop.example) | 闸门 manifest 模板与 module.prop 生成结果 |
 
 ---
@@ -207,7 +208,8 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-024
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）
-│   └── versioning.md               # 版本号与 module.prop 规范
+│   ├── versioning.md               # 版本号与 module.prop 规范
+│   └── payload.md                  # payload 规范（ADR-024 的实现面）
 ├── spec/
 │   └── gate-vectors.json           # ★ 版本闸门的唯一规格（三份实现都对着它跑）
 ├── lib/
@@ -223,6 +225,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
     ├── check-gate.py               # 三份实现 × 一张表：防漂移检查（CI 入口）
     ├── test-service.sh             # 壳的契约测试（幂等 / 环境钉死 / 先停后换 / 退出码）
     ├── test-dsh-ctl.sh             # 入口的契约测试（参数校验 / 审计 / 透传 / cgroup 如实报告）
+    └── build-payload.py            # payload 打包器（确定性 tar.gz + payload.json + 校验 + 自测）
     ├── verify-pty.sh               # 容器内 PTY 可用性验证（双通道）
     └── compare-firmware.py         # 两份固件包内核侧镜像比对
 ```
