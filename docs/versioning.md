@@ -237,7 +237,9 @@ python3 tools/semver.py           # 只跑 Python 实现
 三个变异测试分别被抓到 —— 把 sh 的「数字段 < 字母段」写反、把 node 的「final > prerelease」写反、放行 prerelease 前导零。
 **一道永远绿的检查等于没有检查**，所以这三条变异测试要跟着一起维护。
 
-✅ **真机已闭环（2026-10-17）**：设备是 **mksh R59**（`@(#)MIRBSD KSH R59 2020/10/31 Android`，`/system/bin/sh` 为普通文件、含 mksh 标记、无 toybox 标记）。
+✅ **真机已闭环（2026-10-17，实测）**：设备是 **mksh R59**（`@(#)MIRBSD KSH R59 2020/10/31 Android`，
+一加 12 / PJD110 / Android 16，`/system/bin/sh` 为普通文件、含 mksh 标记、无 toybox 标记），
+在该机上跑自检脚本得到 **`RESULT ok 76/76`**。
 用 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh)（**单文件、自包含**：由 `tools/build-device-selftest.py` 把实现正文 + 76 条向量烘进去）
 在真机上跑，首轮暴露了一个**方言坑**（mksh 里 `${s%%|*}` 返回空串，见 [pitfalls A20](./pitfalls.md)），修掉后设备与本机三端（mksh / dash / bash）
 一律 `RESULT ok 76/76`。`tools/check-gate.py` 现已自动纳入 mksh（装了就跑），CI 也会装 mksh 跑一遍。

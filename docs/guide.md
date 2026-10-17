@@ -17,6 +17,7 @@
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
 | **命门：容器内 PTY** | ✅ **实测通过**（[docs/research.md](./research.md) §9.1）；到真 chroot 里跑一次 [tools/verify-pty.sh](../tools/verify-pty.sh) 即闭环 |
+| **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
