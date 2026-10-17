@@ -1,0 +1,85 @@
+{
+  "_note": "版本闸门 manifest 模板。由模块携带；容器内的用户不能改（改了也会被启动校验发现并回落基线）。",
+  "_notes_stripped_note": "下划线开头的键是本模板的注释（含 <port> 这类散文），tools/gen-version.py 生成时会递归剥掉，不进产物。",
+
+  "schema": 1,
+  "state_version": 1,
+
+  "module": {
+    "id": "Zodiac-Quill-Saga",
+    "author": "SunsetRNE",
+    "version": "1.0.0.1",
+    "versionCode": 1,
+    "_version_layout": "<大版本>.<功能变更新增>.<补丁>.<内置 DSH 版本号>，见 docs/versioning.md §2",
+    "_single_source_of_truth_note": "本文件的 module/version/baked/floor/node_floor 由 tools/gen-version.py 从 tools/version.env 生成，不要手改",
+    "_single_source_of_truth": "version.env —— module.prop / manifest.json / APK 三处都由它生成，禁止手改",
+    "managed_features": [],
+    "_managed_features_note": "阶段一不接管任何内核特性 → 留空；有真实实现才声明，且必须与模块 config 的 manage.*=true 成对（versioning §4.3）"
+  },
+
+  "baked": "0.2.0-rc.2",
+  "floor": "0.2.0-rc.2",
+  "_recommended_note": "留空 = 不向用户推荐任何升级；只在 version.env 的 DSH_RECOMMENDED 非空时才出现，且必须 > floor",
+
+  "node_floor": "24.0.0",
+  "pnpm_floor": "10.0.0",
+
+  "distro": {
+    "name": "ubuntu",
+    "release": "noble",
+    "version": "24.04",
+    "libc": "glibc",
+    "_why": "node-pty 只有 glibc 预编译；cua-driver 无 musl 包。详见 docs/baseline.md §2"
+  },
+
+  "paths": {
+    "root": "/data/local/dsh",
+    "state": "/data/local/dsh/state",
+    "base": "/data/local/dsh/base",
+    "user": "/data/local/dsh/user",
+    "active": "/data/local/dsh/active",
+    "run": "/data/local/dsh/run",
+    "container_rootfs": "/data/local/chroot-distro/ubuntu"
+  },
+
+  "layers": {
+    "base/node": "sha256:REPLACE_ME",
+    "base/dsh-0.2.0-rc.2": "sha256:REPLACE_ME"
+  },
+
+  "runtime": {
+    "dsh_cmd": "dsh",
+    "web_profile": "web",
+    "port": 0,
+    "host": "127.0.0.1",
+    "extra_args": ["--no-open"],
+    "trusted_hosts": ["127.0.0.1", "localhost"],
+    "_port_note": "port=0 让 OS 分配；实际端口从启动行 stdout（dsh web: http://127.0.0.1:<port>/?token=…）解析，再由壳原子写入 run/dsh.json（2026-10-16 实测确认 stdout 是唯一即时真源，DSH 自己不落端口文件）",
+    "_trusted_host_note": "平板通过 LAN 访问时，必须把 <手机IP> 加入 trusted_hosts，否则 /api 被信任栅栏拒"
+  },
+
+  "access": {
+    "mode": "local",
+    "_modes": {
+      "local": { "bind": "127.0.0.1", "token": false },
+      "lan": { "bind": "0.0.0.0", "token": true, "wifi_ssid_allowlist": [] },
+      "public": { "bind": "none", "tunnel": "tailscale" }
+    }
+  },
+
+  "files": {
+    "provider": "rclone",
+    "serve": "webdav",
+    "root_in_container": "/data/shared",
+    "expose_sdcard": false,
+    "_expose_sdcard_note": "true 时需要把 /storage/emulated/0 bind 进容器，或由壳以宿主身份直接暴露"
+  },
+
+  "guards": {
+    "check_on_start": true,
+    "check_interval_sec": 300,
+    "verify_layer_hashes": true,
+    "on_violation": "fallback_to_base",
+    "_semver_note": "比较必须 prerelease-aware：0.2.1-rc.1 > 0.2.0-rc.2 > 0.2.0；禁止字符串比较"
+  }
+}

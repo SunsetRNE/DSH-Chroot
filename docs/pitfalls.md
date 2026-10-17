@@ -1,0 +1,171 @@
+# 反例集：会绕远路的做法 + 值得进阶的方向
+
+> 上半部分（A）是**我已经在你我的对话里实际踩过/差点踩**的弯路，每条都写了"为什么错"和"正确做法"。
+> 下半部分（B）是**进阶方向**，每条都写了"触发条件"——**没到条件就别做**。
+
+---
+
+# A. 弯路（Avoid）
+
+### A1. 一上来就冲着"内核模块加载 root"去
+- **症状**：把"找到能加载内核模块的 root 方案"当成项目第一步。
+- **为什么错**：你的设备**已经是 LKM 模式**（`kernelsu.ko` 开机载入，内核没改）——你要的东西已经在跑了。
+- **正确做法**：**先盘点现状**（root 形态 / 内核版本 / 已装模块），再决定要动什么。第一步永远是"我现在有什么"。
+
+### A2. 把 `sabamdarif/chroot-distro` 当成"模块"
+- **症状**：拿它的仓库去研究怎么刷入。
+- **为什么错**：它是 **pip 安装的 Python CLI**（`requires-python>=3.10`）；仓库里**没有 `module.prop`/`META-INF`**。模块在**同名的另一个仓库** `Magisk-Modules-Alt-Repo/chroot-distro`（你贴的链接和它是两回事）。
+- **正确做法**：认仓库不看名字——**看有没有 `module.prop`**。附：`sabamdarif` 那条线在 2026-02 亲手删掉了 Magisk 外壳。
+
+### A3. 为一个 0.2.x 的上层（DSH）去动内核
+- **症状**：先想"要不要刷内核"，再想壳。
+- **为什么错**：**顺序反了**。DSH 自己还在 0.2.0-rc，插件/格式会漂移；内核是最贵、最难回滚、最容易被 OTA 抹掉的一层。把稳定性押在它身上是本末倒置。
+- **正确做法**：**先把壳做出来，让它对下层不敏感**；阶段一用 stock + LKM 就能跑。内核只在"壳已经稳定、且确实需要 systemd/NAT/GPU"时才动。
+
+### A4. 有 root 还套 proot / DSHA 当基线
+- **症状**：因为 DSHA 现成，就把它当运行基础。
+- **为什么错**：proot 是用户态 syscall 翻译，**你的 root 本来可以不要这层开销**；而且它把环境绑进 App 沙箱。
+- **正确做法**：`chroot` + bind mount。proot 只在**没有 root** 时才是正确工具。
+
+### A5. 自己造"动态端口"（猜端口 / 扫 netstat）
+- **症状**：写壳时"先探测一个空闲端口，再传给服务"。
+- **为什么错**：探测→真正 bind 之间必然有 **TOCTOU 竞态**；扫 `netstat` 又要处理 busybox/toybox 输出差异。
+- **正确做法**：**让服务自己 `bind(0)`**。DSH 原生支持：`dsh web --port 0`（`--help` 明写 "pass 0 to let the OS pick a free one"），端口再回传发布。
+
+### A6. 把 439 MB 的 DSH 塞进模块 zip 或 `/system`
+- **症状**：想让"刷一次什么都有"。
+- **为什么错**：DSH 安装后 **439 MB**（+Ubuntu rootfs 后 ~1 GB）。Magisk 模块目录是**挂载源**，塞大件会让安装慢/失败率上升，也让模块升级变笨重。
+- **正确做法**：**分包**。模块 zip 只放 CLI+壳+manifest（KB 级）；payload（~1 GB）放 `/data/local`，按需解包；state 永不覆盖。
+
+### A7. 把 `~/.dsh` 放进版本目录
+- **症状**：为了"干净"，把 profiles/sessions/凭据跟版本放一起。
+- **为什么错**：**升级 = 丢 session 和凭据**。
+- **正确做法**：`state/` 与版本层彻底分离，容器里只把 `state/dot-dsh` bind 到 `/root/.dsh`。
+
+### A8. 以为 root 容器里的"只读/不可变"是安全边界
+- **症状**：靠 `chmod 444` / `chattr +i` 保护基线。
+- **为什么错**：容器里的"用户"也是 **root**；你的 floor 不是安全机制。
+- **正确做法**：用 **`mount -o remount,ro,bind`**（真正改不动）；并且**接受**floor 只是"防手滑 + 防自动降级 + 可自动回滚"的护栏。
+
+### A9. 直接 `--host 0.0.0.0` 就以为平板能用
+- **症状**：监听全网卡，结果平板打开是 403/白屏。
+- **为什么错**：两个独立问题。① DSH 的 `/api` 有**浏览器信任栅栏**，非本机 authority 需要 `--trusted-host`；② 你把**整个 agent 控制面裸奔在局域网**上了。
+- **正确做法**：DSH 保持监听 `127.0.0.1`，由**壳反代**；壳只暴露三个端点 + token；需要 LAN 时按 Wi-Fi 条件开。
+
+### A10. 相信"下载即安全"
+- **症状**：直接用 chroot-distro 的 `install ubuntu` 拉 rootfs。
+- **为什么错**：脚本**完全不校验哈希**（源码里只有算自己 md5 的显示用途），而且 `kali`/`alpine`/`archlinuxarm` 是 **`http://` 明文源**。
+- **正确做法**：自备 rootfs tarball（官方 https 下载），**自己算 sha256 后**再喂给 `下载 <name> <直链>`/`add`。别让明文 http 进你的运行基线。
+
+### A11. 依赖 chroot-distro 的"在线更新"
+- **症状**：等 Magisk 里点更新。
+- **为什么错**：`update.json` 停在 **v2.1.0 / versionCode 17**（2025-06），而 main 分支到 2025-12-18 还有 8 个提交未发版 → **点更新永远拿不到东西**。
+- **正确做法**：手动替换 `/data/adb/modules/chroot-distro/system/bin/chroot-distro` + `chmod 755` + 重启，并核对 sha256（`39459c59…`）。
+
+### A12. 在 Alpine 上"反正 Node 能装"
+- **症状**：为了小体积选 Alpine。
+- **为什么错**：`node-pty`（**agent runtime 的命脉**）在 npm 上**只有 glibc 预编译**（tarball 里只有 `linux-arm64`/`linux-x64`）；`@trycua/cua-driver` **musl 包 404**，且它是 optionalDep → **静默降级**（不报错，能力悄悄消失）。
+- **正确做法**：Ubuntu 24.04 (glibc)。省下的几十 MB 抵不上"现场编译 + 静默功能缺失 + agent 天天踩 busybox"。
+
+### A13. 把"换内核"当成低风险的一步
+- **症状**："管理器重刷一下就好"。
+- **为什么错**：至少四个真实坑：① `ssg_enable` 默认 `true`，而作者 README **明写 SSG 仅在一加12 上会导致无法正常启动**；② OKI 内核要与固件小版本对版（构建脚本的 `KERNEL_NAME=android14-11-o-gca13bffobf09` 与你机器的 `…g659d588fa0da` 不同）；③ **别默认 AnyKernel3 会帮你处理所有分区**——写哪些分区由包内配置决定，OKI 场景常见的配套分区（dtbo/vendor_boot）不一定包含【待核对】；④ **OTA 会覆盖 boot**，你就退回 LKM。
+- **正确做法**：先备份 boot（能救砖）；确认 `ssg_enable=false`；确认产物与固件版本匹配；并接受"OTA 后要重刷"。
+
+### A14. 拿 DSH 的版本号当"稳定标志"
+- **症状**："还没到 1.0，所以不能上。"
+- **为什么错**：0.2.0-**rc** 的语义由上游自己定义，而且 `package.json` **连 `engines` 都没有**；它不会替你兜版本兼容。
+- **正确做法**：**自己定 floor**，并用 prerelease-aware 比较（`0.2.1-rc.1 > 0.2.0-rc.2 > 0.2.0` 的序必须对，别用字符串比较）。
+
+### A15. 期望纯容器完全替代 DSHA 的设备控制
+- **症状**：以为进了容器就"什么都能干"。
+- **为什么错**：读屏/点按/剪贴板/通知这些是 **App 层能力**（无障碍服务、Shizuku、MCP 桥）；本会话的 `mcp__dsha-android__*` 工具就来自 DSHA App。**精确控件语义与虚拟屏，root CLI 替代不了。**
+- **正确做法**：容器为主 + 保留**极薄设备桥**（`uiautomator dump` + `input` + `screencap` + `am/pm`，必要时保留一个 App 做无障碍增强）。
+
+### A16. 把"1 GB payload 打包"排在"命门验证"之前
+- **症状**：先做打包脚本，最后才试跑 DSH。
+- **为什么错**：整条路线的命门是 **`node-pty` 在 chroot 里能否起 PTY**，以及 `dsh web --port 0` 能否跑起来。这两条不过，1 GB 白打。
+- **正确做法**：**最小验证优先**：容器里 `node -e "…node-pty…"` → 再 `dsh --version` → 再打包。
+
+### A17. 把 `/app/*` 桥当成壳的核心链路
+- **症状**：壳的启动/控制依赖 DSHA 的 HTTP 桥。
+- **为什么错**：那是 **App 层接口**，App 升级/权限变化/被卸载就断；你替代 DSHA 的初衷恰恰是摆脱它。
+- **正确做法**：壳的核心链路是 **root + UDS**；`/app/*` 只能作为**可选增强**。
+
+### A19. 再写一个插件管理器
+- **症状**：觉得"插件侧得有个管理器"，准备自己造。
+- **为什么错**：**它已经有了**。DSH_HOME 里躺着 `plugin-manager.py` / `plugin-lifecycle.py` / `plugin-transactions.py` / `plugin-dependencies.py` + `plugin-dependency-locks/` / `plugin-sources.json` / `plugin-updates.json` / `plugin-activations.json`（含指纹与版本）/ `plugin-history/` / `plugin-previews/` / `plugin-semver.cjs` —— 源、下载校验、依赖锁、事务、激活指纹、更新检查、历史全都有。再写一个只会和它对账本、抢 `profiles/<name>/node_modules`，而且注定落后上游。
+- **正确做法**：DSH 侧**用它的既有机制**（`--profile`、`cordis.patch.yml`、它自己的安装/更新命令）；壳侧只写**目录约定**（`caps/<name>/cap.json` + 起停脚本 + 健康探测），把"管理器"留到确实有第三方生态时再做（触发条件见 [ADR-008](./decisions.md)）。
+
+### A18. 忽略容器与原厂 `/data` 的挂载标志
+- **症状**：容器里 SUID 程序不工作 / apt 的 gpgv 报错。
+- **为什么错**：`/data` 默认可能带 `nosuid,nodev,noexec`；chroot-distro 有 `fix-suid` 开关去 remount，**这会动宿主的挂载标志**。
+- **正确做法**：知情后再用；并且记住它和"用 ro bind 保护基线"是**互相影响**的两件事。
+
+---
+
+# B. 进阶（Advance）——每一条都写了"触发条件"
+
+### B1. 阶段二：自定义内核 + Droidspaces
+- **触发条件**（**三条同时满足才做**）：① 壳已经稳定运行 ≥ 一段时间；② 你**确实**需要容器内 systemd / NAT / macvlan / GPU 直通；③ 你接受"OTA 后要重刷"。
+- **怎么发车**：`cctv18/oppo_oplus_realme_sm8650` 的 6.1.141 流水线，输入：
+  `ksu_type=bakasu`（**与你现在管理器同源**，仓库整体改名自 ReSukiSU，脚本原话"BakaSU 兼容 sukisu 管理器"）、
+  `droidspaces_enable=standard`、**`ssg_enable=false`**、其余按需；N 选 `l`（无内置 KSU）**走不通**——脚本只"跳过配置"，**不产出 `.ko`**。
+- **收益**：真容器。**成本**：刷机风险 + OTA 反复。
+
+### B2. KPM（KpatchNext 内核补丁模块）
+- **触发条件**：你想要的只是**隐藏/改写行为**（对已有函数打补丁），而不是"补上没有的内核子系统"。
+- **能做**：在任意 KSU/Magisk 环境加载内核模块级补丁。**不能做**：把没编译进去的 `PID_NS`/`NET_NS`/`VETH` 变出来——那必须换内核。
+
+### B3. ~~overlayfs 分层~~ → **已否决**（ADR-009）
+- **原本想法**：用 overlayfs 把 `base(ro)` + `user(rw)` 合成容器里的 DSH 目录。
+- **否决理由**：
+  1. **不需要** —— `mount --bind` + `remount,ro` + 一个 active 指针就能达到同样效果，且完全可控；
+  2. **多一层内核依赖** —— stock 内核未必可用（原本标的就是【待验证】）；
+  3. **概念混淆** —— 有人会把它和 **KernelSU 的模块挂载**混为一谈，那是**完全不同的场景**（见下）。
+- **规范做法**：容器分层 = **bind(ro) + active 指针**；模块挂载 = 交给你的元模块（**Magic Mount-rs**），两者井水不犯河水。
+- ⚠️ **唯一的交叉点**：不要给容器 bind **模块目录**（`/data/adb/modules/...`）——那会穿过 KernelSU 的挂载视图。容器只 bind `/data/local/dsh/` 与显式白名单。
+
+> 📌 **两个 "overlay" 别混**：① **文件系统 overlay**（overlayfs，模块挂载/容器分层用它）；② **网络 overlay**（Tailscale/WireGuard 那类组网，见 §B10 与 research §6.4.1）。本项目里：文件系统 overlay **不用**；网络 overlay **已裁**（ADR-006）。
+
+### B4. SCM_RIGHTS 传文件描述符
+- **触发条件**：你想让"对外端口"完全由宿主决定，甚至不占 TCP 端口。
+- **做法**：容器内服务 `bind(0)` 后，把 listening socket **fd** 通过 UDS 交给宿主壳，宿主壳决定怎么暴露。
+- **收益**：暴露面最小。**成本**：实现复杂度上升，仍建议**数据面 UDS 为默认**。
+
+### B5. 用 ext4 镜像承载 rootfs/版本层
+- **触发条件**：你开始做"备份/迁移/差分"。
+- **收益**：一个文件 = 易备份、易算哈希、易做增量；挂载后就是目录。
+- **成本**：需要 loop 支持【待验证】；对 Android 的 `nosuid` 等标志要额外处理。
+
+### B6. 把上游 Python 版塞进容器内当"镜像管理器"
+- **触发条件**：你开始需要**任意 Docker 镜像 / OCI / Dockerfile 构建**。
+- **做法**：容器里装 Python 3.10+，跑 `sabamdarif/chroot-distro` v3。
+- **收益**：一次拿到 build/OCI/sync/diff/isolation。**成本**：容器内多一套 Python 运行时；两套容器布局不通用（要迁移，见前文配方）。
+
+### B7. 设备桥重建（把 DSHA 的能力拿回来）
+- **触发条件**：你发现"agent 看不见手机屏幕"影响使用。
+- **做法**：容器里挂一个薄 HTTP 桥，包装 `uiautomator dump` / `input` / `screencap` / `am` / `pm` / `cmd notification`；不够的部分再考虑保留一个极薄 App 做无障碍增强。
+- **收益**：不依赖 DSHA。**成本**：需要逐项实测覆盖度（**【待验证】**）。
+
+### B8. A/B 多版本共存与灰度
+- **触发条件**：你开始"不敢升级 DSH"。
+- **做法**：state 与版本层分离后，`base/` 与 `user/` 天然支持两版并存，`active` 原子切换 = **秒级回滚**。
+- **收益**：升级心理成本归零。**成本**：几乎为零（本设计已具备）。
+
+### B9. payload 增量更新
+- **触发条件**：payload 每次全量下载让你烦。
+- **做法**：分层打包（rootfs / node / dsh 三层各自独立哈希），只换变的那层；pnpm store 复用。
+- **收益**：升级从 ~1 GB 降到几十~几百 MB。
+
+### B10. 同一套壳跑别的东西
+- **触发条件**：你想跑的不止 DSH。
+- **做法**：因为壳只依赖"**起/停 + 一个已知端口**"，把 DSH 换成别的 agent/服务（甚至多个）几乎零改造。
+- **收益**：这套投资的复用率最高。**成本**：零。
+
+---
+
+## 一句话总结
+
+**弯路几乎都来自"先动最贵的一层"和"没验证就放大"**；
+**进阶几乎都来自"把边界留在壳里，让下面可替换"**。
