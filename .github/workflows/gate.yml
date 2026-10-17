@@ -43,3 +43,10 @@ jobs:
         run: |
           dash tools/verify-gate-device.sh
           mksh tools/verify-gate-device.sh
+
+      # 壳的六条契约 + 退出码表（ADR-013 / ADR-024）
+      - name: 壳契约测试（dash）
+        run: dash tools/test-service.sh
+
+      - name: 壳契约测试（mksh）
+        run: mksh tools/test-service.sh

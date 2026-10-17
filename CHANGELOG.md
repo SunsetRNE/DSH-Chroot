@@ -17,6 +17,12 @@
   首轮曝出方言坑 —— mksh 里 `${s%%|*}` 返回空串（dash/bash 正常），向量行全部解析失败；
   改成 `IFS='|'; set -- $x` 后三端 76/76。坑记为 [pitfalls A20](docs/pitfalls.md)，
   `tools/check-gate.py` 自动纳入 mksh，CI 也装 mksh 跑一遍
+- **命门在真 chroot 上闭环（2026-10-18）**：chroot-distro 2.1.0 + ubuntu noble 24.04（arm64）里 `pty.spawn` 拿到 `/dev/pts/0`，
+  `/dev/ptmx` 为独立字符设备（5,2 · 666）→ `node-pty` 的直接前提成立。记于 [research §9.1.1](docs/research.md)
+- **壳的第一块（service.sh）**：唯一执行者骨架 —— 动词 `boot/start/stop/restart/status/bootstrap/install/logs`，
+  退出码 `0/10/20/30/40`；六条契约各自可测：非交互（stdin 钉 `/dev/null`）· 环境钉死 · 幂等 ·
+  先停后换（切层前停实例）· 默认离线（`--offline`）· 机器可读标记 `DSH_SERVICE_*`。
+  `tools/test-service.sh` 25 条断言在 dash 与 mksh 双端全绿；bootstrap 状态机按 ADR-024 实现（staging + 原子切指针）
 - 设计文档：ADR-001 ~ ADR-024 全部拍板；威胁模型含「不设防声明」
 - **ADR-024（payload 交付形态与首启自举）**：模块 zip 永不装 payload（只装 < 1 MB 的引导器）；
   首启由壳触发/执行/监督：离线 inbox 优先 → 否则 busybox wget 下载 → 校验 → staging 解压 → 原子切指针；

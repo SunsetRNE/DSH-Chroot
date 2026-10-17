@@ -16,7 +16,7 @@
 | **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot` · `V_DSH=1`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
-| **命门：容器内 PTY** | ✅ **实测通过**（[docs/research.md](./research.md) §9.1）；到真 chroot 里跑一次 [tools/verify-pty.sh](../tools/verify-pty.sh) 即闭环 |
+| **命门：容器内 PTY** | ✅ **完全闭环**（2026-10-18）：proot 实测（§9.1）+ **真 chroot 复验**（§9.1.1，chroot-distro 2.1.0 + ubuntu noble，`/dev/pts/0`） |
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | 阻塞项 | **无** |
 
@@ -192,6 +192,7 @@ L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017�
 ```
 DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Saga（见 docs/versioning.md §8）
 ├── README.md                       # 对外首页：它是什么 / 不是什么 / 怎么装
+├── service.sh                      # ★ 壳的唯一执行者（ADR-013）：契约 + 退出码 + 自举入口
 ├── LICENSE                         # MIT
 ├── CHANGELOG.md                    # 发版记录（update.json 的 changelog 指向它）
 ├── update.json                     # Root 管理器检查更新用（与 version.env 同步，生成器会校验）
@@ -219,6 +220,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
     ├── gen-version.py              # 由真源生成 module.prop / manifest.json / APK 版本字段（fail-closed）
     ├── semver.py                   # 权威 semver 比较（Python 参考实现）
     ├── check-gate.py               # 三份实现 × 一张表：防漂移检查（CI 入口）
+    ├── test-service.sh             # 壳的契约测试（幂等 / 环境钉死 / 先停后换 / 退出码）
     ├── verify-pty.sh               # 容器内 PTY 可用性验证（双通道）
     └── compare-firmware.py         # 两份固件包内核侧镜像比对
 ```

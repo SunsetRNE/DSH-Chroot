@@ -356,7 +356,7 @@ DSHA 的价值不只是 Linux 环境，还有 Android 侧能力（读屏 / 点�
 
 | # | 项 | 类型 | 影响 | 怎么消解 |
 |---|---|---|---|---|
-| 1 | ~~chroot 容器里 `node-pty` 能否起 PTY~~ | **✅ 已消解（2026-10 实测通过）** | 命门已解除 | 见下方实测记录；目标 chroot 里再复验一次即闭环 |
+| 1 | ~~chroot 容器里 `node-pty` 能否起 PTY~~ | **✅ 已闭环（proot 实测 2026-10 + 真 chroot 复验 2026-10-18）** | 命门已解除 | 见 §9.1 / §9.1.1 |
 | 2 | ~~内核是否支持 overlayfs~~ | **已消解** | 容器分层改用 **bind(ro) + active 指针**，不依赖 overlayfs（ADR-009） | 无需验证 |
 | 3 | ~~`--port 0` 的端口如何读出~~ | **✅ 已消解（2026-10-16 实测）** | 端口从启动行 stdout 解析（实测 → `39895`）；DSH_HOME 无端口文件 | 已闭环，见 §6.2 |
 | 4 | SELinux 强制下 chroot + bind + 网络 | 【待验证】 | 可能被 neverallow 拦 | 先跑最小 chroot |
@@ -390,6 +390,27 @@ DSHA 的价值不只是 Linux 环境，还有 Android 侧能力（读屏 / 点�
 但**分配 PTY 不受影响**（两条通道都拿到了 `/dev/pts/0`）。以后看到这个报错别当成"PTY 不可用"。
 
 **复验工具**：`tools/verify-pty.sh`（node-pty 与 python pty 双通道，任一路通过即 OK）
+
+### 9.1.1 真 chroot 复验（2026-10-18，设备实测 → **命门完全闭环**）
+
+环境：chroot-distro **2.1.0** + ubuntu **noble 24.04（arm64）**，宿主 mksh R59 / 一加 12 / Android 16。
+
+```
+root@localhost:~# python3 -c 'import pty;pty.spawn("/bin/sh")'
+# tty
+/dev/pts/0                      ← 真 chroot 里分配到了 PTY
+# ls -l /dev/ptmx
+crw-rw-rw-. 1 root root 5, 2 Oct 18 06:44 /dev/ptmx
+# ls /dev/pts/
+0  ptmx
+```
+
+**结论：PTY 在真 chroot 里可用** —— 这是 `node-pty` 的直接前提（它打开的就是 `/dev/ptmx`）。此前只在 proot/bxroot 容器里验证过，现在目标形态也验过了。
+
+**两条容易误判的事实（记下来）**：
+
+1. **chroot 里的 `/proc/mounts` 是宿主的那张表**（共享 mount namespace），所以会看到宿主的 `devpts … ptmxmode=000`。**它不代表容器内的可用性** —— 要看 `/dev/ptmx` 本身：这里是独立的字符设备 `5,2`、权限 `666`，并不走被 `ptmxmode=000` 卡住的那条符号链接路径。
+2. 容器内的 `/dev/pts` 里能看到 `0` 和 `ptmx`，说明 chroot-distro 给它挂了**自己的 devpts 实例**（其源码 1100 行附近 `mount -t devpts`）。
 
 ---
 
