@@ -17,7 +17,10 @@
   首轮曝出方言坑 —— mksh 里 `${s%%|*}` 返回空串（dash/bash 正常），向量行全部解析失败；
   改成 `IFS='|'; set -- $x` 后三端 76/76。坑记为 [pitfalls A20](docs/pitfalls.md)，
   `tools/check-gate.py` 自动纳入 mksh，CI 也装 mksh 跑一遍
-- 设计文档：ADR-001 ~ ADR-023 全部拍板；威胁模型含「不设防声明」
+- 设计文档：ADR-001 ~ ADR-024 全部拍板；威胁模型含「不设防声明」
+- **ADR-024（payload 交付形态与首启自举）**：模块 zip 永不装 payload（只装 < 1 MB 的引导器）；
+  首启由壳触发/执行/监督：离线 inbox 优先 → 否则 busybox wget 下载 → 校验 → staging 解压 → 原子切指针；
+  修订 ADR-013 的"离线"条款；三条硬约束（无 curl / 解压前查空间 / 纯 POSIX sh）
 
 > 尚无模块包。此版本将随首个 Release 发布。
 

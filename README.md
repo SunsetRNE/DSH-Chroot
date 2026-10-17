@@ -63,7 +63,7 @@
 |---|---|
 | [docs/guide.md](docs/guide.md) | **内部项目指引**：进度 / 决定速查 / 待办（想快速看懂全貌从这里进） |
 | [docs/research.md](docs/research.md) | 架构与路线研究：目标、盘点、路线比较、端口与通信 |
-| [docs/decisions.md](docs/decisions.md) | **ADR-001 ~ ADR-023**：23 条独立决策 + 代价 + 重审触发 |
+| [docs/decisions.md](docs/decisions.md) | **ADR-001 ~ ADR-024**：24 条独立决策 + 代价 + 重审触发 |
 | [docs/threat-model.md](docs/threat-model.md) | 威胁模型，含 §5「不设防声明」 |
 | [docs/baseline.md](docs/baseline.md) | 基线定义：Ubuntu 24.04 / Node 24 / pnpm 11.x / DSH 基线 |
 | [docs/versioning.md](docs/versioning.md) | 版本号、`module.prop`、命名分工、semver 闸门 |

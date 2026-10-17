@@ -1164,6 +1164,93 @@ const response = await fetch(request.url, {...headers: {..., 'X-Token': token}})
 
 ---
 
+## ADR-024 payload 交付形态与首启自举：模块 zip 永远不装 payload  ← **本次决定**
+
+- **背景**：目标形态是"**刷模块 → 重启 → 能用**"。而现在这条 demo 路径要求人手装 chroot-distro、手选发行版、手装 python —— 这不能当交付形态。问题归纳成一句：**1 GB 级的 payload 怎么到设备上**。
+- **结论先说**：⛔ **payload 永远不进模块 zip**；改成**首启自举（bootstrap）**，由壳**触发 / 执行 / 监督 / 观测**。
+
+### 为什么不能塞进 zip（三条，任一条都足以否决）
+
+1. **体积翻倍**：根管理器先把 zip 解到 `/data/adb/modules_update/<id>/` 再改名 → 安装期同时存在 zip 与解压副本，1 GB 变 2 GB；且每次模块更新都要重下。
+2. **安装器环境不可靠**：`install.sh` 跑在 root 管理器的受限环境里，没有断点续传、没有进度、超时无人管 —— 1 GB 在 Installer 里解压是"必须一次成功"的赌局。
+3. **与已有决定冲突**：[guide §4](./guide.md) 已写"DSH 本体 439 MB **绝不能塞进模块 zip**"，[pitfalls A6](./pitfalls.md) 也记了同一条；payload 只会更大。
+
+### 决定 A：模块 zip 只装"引导器"
+
+内容固定为：`module.prop` · `service.sh` · `dsh-ctl` · `dsh-update` · `lib/`（含 `semver-gate.sh`）· `update.json` · 少量配置。**体积目标 < 1 MB**。
+payload 是**独立产物**，有两种形态：Release 资产 / 本地文件。
+
+### 决定 B：来源优先级（离线优先）
+
+```
+① 本地 inbox：/data/local/dsh/inbox/payload-<ver>.tar.gz（ADR-016 的投递面）
+② inbox 没有 → 联网下载：GitHub Releases（ADR-015 的发布通道）
+③ 都不行 → exit 30，不启动 DSH，也绝不假装成功
+```
+
+- `dsh-ctl bootstrap --offline`：**禁止 ②**，只认本地。
+- payload 必须自带 `payload.json`：`{baked, node, pnpm, sha256, size}`；解压后还要拿容器内实际 `dsh --version` 与 `baked` 对账（对不上就拒绝 —— 防"层与 manifest 说的不是一回事"）。
+- **不做增量**（见 [pitfalls B9](./pitfalls.md)）：整包替换更简单、更好回滚。
+
+### 决定 C：四层分工
+
+| 层 | 谁 | 职责 | 不许做 |
+|---|---|---|---|
+| 触发 | `service.sh boot`（开机）/ `dsh-ctl bootstrap`（手动）/ 模块更新标记 | 只判断"要不要自举" | 不下载、不解压 |
+| 执行 | `service.sh bootstrap` → `dsh-update` | 下载 → 校验 → 解压 → 切指针 | 不动 `active` 之外的东西 |
+| 监督 | `run/bootstrap.json` | 记录阶段 / 进度 / 错误，供崩溃恢复 | 不做决策 |
+| 观测 | `dsh-ctl status` | 显示 `bootstrap: downloading 42%` 之类 | 不写状态 |
+
+> 为什么必须由壳来做：bootstrap 期间 **DSH 还没起来** —— 任何依赖 DSH 的路径（插件、Web UI、AI）都不成立。这也是 ADR-005 "壳不做 Hook"的另一面。
+
+### 决定 D：状态机与幂等（崩溃可恢复）
+
+```
+idle ──► downloading ──► verifying ──► unpacking ──► ready
+            │               │              │
+            └───────────────┴──────────────┴──► failed(code, retryable?)
+                                                       │
+                        下次 boot 从"最后一个完成的阶段"继续 ┘
+```
+
+- 每个阶段结束后**先落盘状态再进下一阶段**（写失败就停，不硬闯）。
+- 解压走 **staging + 原子切换**：解到 `base/.staging-<ver>/` → sha256 对账 → 改名 `base/<ver>/` → 原子切 `active` 指针（ADR-009 的"先停后换"同样适用）。
+- 任何一步失败：`active` **保持不动**，用户仍能用上一个版本。
+
+### 决定 E：三条设备侧硬约束
+
+1. **设备上没有 `curl`**：下载只能用 **`busybox wget`**（KSU 自带的那个；ADR-013 决定 C 的工具清单里没有 curl）。断点续传靠 `wget -c`。
+2. **解压前查空间**：压缩包与解压副本会同时在，峰值 ≈ 2×；空间不足要**提前** exit 30，不许解到一半才炸。
+3. **纯 POSIX sh**：判定与切指针都在 `service.sh` 里，不能借用容器里的 Python/Node（那时容器还没起来）。
+
+### 决定 F：修订 ADR-013 的"离线"条款
+
+ADR-013 决定 B 第 5 条原文是"**离线**：payload 从模块自带的副本解压，不联网"。**改为**：
+
+> 默认离线可用；允许**一次显式或自动的网络自举**，且必须可禁用（`--offline`）。
+
+其余五条契约（非交互 / 环境钉死 / 幂等 / 先停后换 / 可观测+退出码）**不变**。
+
+### 决定 G：出网要记账
+
+首启下载是**壳主动出网**，目的地是 GitHub Releases。ADR-021 已承认"出网目的地技术上强制不了" → 本条要在 [threat-model §6.3](./threat-model.md) 补一行：谁发起、何时、连哪里、能否禁用。**不假装它不存在。**
+
+### 决定 H：用户动作与可见预期
+
+| 步骤 | 用户做 | 系统做 | 耗时（估） |
+|---|---|---|---|
+| 1 | 刷模块 zip | 解包、落引导器 | 秒级 |
+| 2 | 重启 | `service.sh boot` → 判断 payload 缺失 | 秒级 |
+| 3 | 等 | 下载 / 校验 / 解压（或直接读 inbox） | 取决于来源 |
+| 4 | 打开 `dsh-ctl status` 给出的 URL | 起 DSH、发布端口 | — |
+
+`status` 必须能回答三个问题：**现在在哪个阶段 / 卡住的原因 / 还差多少**。
+
+- **代价**：① 首次使用不是"刷完立刻可用"，要等自举；② 自举期间占 2× 空间；③ 多了一条出网面（要记账）；④ 多一个状态文件要维护一致性。
+- **重审触发**：① payload 体积降到可接受（< 200 MB）→ 重评"塞进 zip"；② 上游给出稳定的 arm64 rootfs 直链 → 可简化成纯下载；③ GitHub Releases 在国内不可达成为常态 → 换源（并因此改 ADR-015）；④ 出现可靠的内置增量格式 → 再翻 [pitfalls B9](./pitfalls.md)。
+
+---
+
 ## 附：一条来自源码的实现细节（将来做能力插件时会用到）
 
 DSHA 的虚拟屏用手握手的**令牌**：

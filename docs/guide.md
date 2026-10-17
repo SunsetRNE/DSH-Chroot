@@ -12,7 +12,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 设计决策 **ADR-001 ~ ADR-023** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
+| 设计决策 **ADR-001 ~ ADR-024** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
 | **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot` · `V_DSH=1`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
@@ -68,10 +68,10 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 
 ---
 
-## 3. 决策地图（**是 23 条独立决策，不是排列组合**）
+## 3. 决策地图（**是 24 条独立决策，不是排列组合**）
 
 ```
-整个方案 = 23 条互不相关的决策，每条单独选（⑧a 是 ⑧ 的附属）
+整个方案 = 24 条互不相关的决策，每条单独选（⑧a 是 ⑧ 的附属）
 
 L0 内核     ① 阶段一不碰内核（原厂 6.1.141 + LKM）........ ✅ ADR-001
 L1 运行时   ② 容器用 chroot-distro 模块 ................. ✅ ADR-001
@@ -97,10 +97,11 @@ L4 信任     ⑪ 内置 Node/pnpm；AI 写插件的约束落在 DSH 之外  ✅
 L5 可观测   ⑭ 四类日志分开；壳是唯一落盘点；两条反馈面 ✅ ADR-014（⛔ 凭证不进日志；诊断包白名单打包；遥测默认保持）
             ⑮ 只走模块仓库发布；不推送上游更新 ✅ ADR-015（模块更新发；基线抬升随模块；自动升级不做；status 显示基线偏离；手机端 UI = 内置第三方插件 dsh-web-mobile v3.0.5）
 L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017（卸载即清空模块域、用户空间永久保留；更新走 update 标记不经 uninstall；先停后卸）
+            ㉔ payload 交付：zip 永不装 payload，壳负责首启自举 ✅ ADR-024（离线优先 · busybox wget · staging+原子切指针 · 修订 ADR-013 的"离线"条款）
 ```
 
 > ⚠️ 常见误解：以为上面的选项会两两组合出"很多套方案"。**不会** —— 每条轴独立选。
-> **截至 ADR-023，设计层全部拍板，没有待定项**（ADR-001 ~ ADR-023）。
+> **截至 ADR-024，设计层全部拍板，没有待定项**（ADR-001 ~ ADR-024）。
 
 ### 3.1 文件通道这条轴的真实结构（为什么说它不是"二选一"）
 
@@ -201,7 +202,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── baseline.md                 # 基线定义 + libc 依赖审计 + manifest 规范
 │   ├── projects.md                 # 涉及项目清单（用 / 不用 / 备选）
 │   ├── pitfalls.md                 # 反例集：弯路 19 条 + 进阶 10 条（A20 = mksh 的 `${s%%|*}` 坑）
-│   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-023
+│   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-024
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）
 │   └── versioning.md               # 版本号与 module.prop 规范
