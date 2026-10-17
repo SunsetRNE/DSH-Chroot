@@ -215,5 +215,27 @@ APK 侧接入方式（二选一）：
 
 ⛔ **禁止字符串比较**：`"0.2.1-rc.1" < "0.2.0-rc.2"` 在字典序上成立，但语义上相反 —— 这是本项目最容易静默出错的点。
 
-生成器用它做的两道闸：`floor ≤ baked`、`recommended > baked`。将来容器里（`sh`）与壳里（`node`）各会有一份实现，
-**它们必须与同一张测试向量表对齐**（`spec/gate-vectors.json`，待做）—— 三份实现、一张表，这是防漂移的唯一办法。
+生成器用它做的两道闸：`floor ≤ baked`、`recommended > baked`。
+
+### 9.1 三份实现 · 一张表（已落地，2026-10-17）
+
+| 实现 | 文件 | 跑在哪 |
+|---|---|---|
+| Python（参考实现） | [tools/semver.py](../tools/semver.py) | 构建机 / CI / 生成器 |
+| POSIX sh | [lib/semver-gate.sh](../lib/semver-gate.sh) | 设备侧（Android 的 sh，**不是 bash**）与容器内 |
+| Node | [lib/semver-gate.mjs](../lib/semver-gate.mjs) | 容器内 / 壳 |
+
+唯一规格：[spec/gate-vectors.json](../spec/gate-vectors.json) —— 41 条 compare + 35 条 check，其中含一条 15 个版本的升序链（相邻必须严格递增）。
+
+```bash
+python3 tools/check-gate.py       # 三份实现 × 76 条向量逐条比对；dash 与 bash --posix 各跑一遍
+python3 tools/check-gate.py -v    # 打印每条结果
+python3 tools/semver.py           # 只跑 Python 实现
+```
+
+**跑过的证据**：四个实现（python / sh-dash / sh-bash / node）76/76 全一致；
+三个变异测试分别被抓到 —— 把 sh 的「数字段 < 字母段」写反、把 node 的「final > prerelease」写反、放行 prerelease 前导零。
+**一道永远绿的检查等于没有检查**，所以这三条变异测试要跟着一起维护。
+
+⚠️ **仍未闭环**：设备侧跑的是 toybox 的 sh，容器里只有 dash 与 bash。上线前必须在真机上跑一次
+`sh lib/semver-gate.sh check 0.2.0-rc.2`（device shell 通道禁 `sh`，要从 Root 管理器 / 终端入口跑）。

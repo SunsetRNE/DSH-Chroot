@@ -24,8 +24,11 @@
 0. ~~在 [tools/version.env](../tools/version.env) 里定下三项占位并生成产物~~ ✅ **已完成（2026-10-17）**：
    三项已定稿、生成器已收口（占位一律 fail-closed，绝不再进产物）。现在跑 `python3 tools/gen-version.py --draft` 出 `build/`，
    `--draft` 是因为 payload 的层 `sha256` 必须真正打过包才有值；不带 `--draft` 时生成器会因这唯一的占位报错 —— 这正是我们要的行为。
-1. （可选，最便宜）在真正的 chroot 容器里跑 `sh tools/verify-pty.sh`，把 PTY 结论闭环；
-2. **写壳的骨架**：`manifest.json` + prerelease 正确的 semver 闸门 + `dsh-update` + `service.sh`（flock / setsid / 环境钉死 / `DSH_HOME` 分离）+ `broker.py`（UDS 控制面 + 端口发布 + 反代 + providers 列表 + caps 扫描）；
+1. ~~版本闸门：一张向量表 + 三份实现~~ ✅ **已完成（2026-10-17）**：[spec/gate-vectors.json](../spec/gate-vectors.json)（76 条向量）·
+   Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；三个变异测试证明这道检查**会红**。
+   ⚠️ 唯一没闭环的：设备侧是 **toybox 的 sh**，容器里只有 dash / bash —— 上线前必须在真机上跑一次 `sh lib/semver-gate.sh check 0.2.0-rc.2`。
+2. （可选，最便宜）在真正的 chroot 容器里跑 `sh tools/verify-pty.sh`，把 PTY 结论闭环；
+3. **写壳的骨架**：`manifest.json` + `dsh-update`（闸门已就绪，直接 `source lib/semver-gate.sh`）+ `service.sh`（flock / setsid / 环境钉死 / `DSH_HOME` 分离）+ `broker.py`（UDS 控制面 + 端口发布 + 反代 + providers 列表 + caps 扫描）；
 3. 挂载按 **ADR-009**：`bind(ro)` + `active` 指针，**不用 overlayfs**；
 4. 再往后是 payload 打包（Ubuntu 24.04 + Node 24 + **pnpm 11.x** + DSH 基线；压缩用 **gzip**，⛔ 不用 zstd —— ADR-013 决定 C）。
 
@@ -199,13 +202,19 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）
 │   └── versioning.md               # 版本号与 module.prop 规范
+├── spec/
+│   └── gate-vectors.json           # ★ 版本闸门的唯一规格（三份实现都对着它跑）
+├── lib/
+│   ├── semver-gate.sh              # 闸门的 POSIX sh 实现（设备侧 / 容器内）
+│   └── semver-gate.mjs             # 闸门的 Node 实现（容器内 / 壳）
 ├── baseline/
 │   ├── manifest.example.json       # 版本闸门 manifest 模板（生成器的输入）
 │   └── module.prop.example         # module.prop 生成后的样子
 └── tools/
     ├── version.env                 # ★ 唯一手改的版本真源（身份 + 四位 version + DSH 基线）
     ├── gen-version.py              # 由真源生成 module.prop / manifest.json / APK 版本字段（fail-closed）
-    ├── semver.py                   # 权威 semver 比较（含自检向量表）
+    ├── semver.py                   # 权威 semver 比较（Python 参考实现）
+    ├── check-gate.py               # 三份实现 × 一张表：防漂移检查（CI 入口）
     ├── verify-pty.sh               # 容器内 PTY 可用性验证（双通道）
     └── compare-firmware.py         # 两份固件包内核侧镜像比对
 ```

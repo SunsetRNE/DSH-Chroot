@@ -1,0 +1,31 @@
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # 三份实现 × 一张表：任何一份与 spec 不一致就红
+      - name: 版本闸门三实现对照
+        run: python3 tools/check-gate.py
+
+      # 产物与真源同步（payload 的 layer sha256 尚未有真值，所以用 --draft）
+      - name: 生成产物并校验漂移
+        run: |
+          python3 tools/gen-version.py --draft
+          python3 tools/gen-version.py --check --draft

@@ -5,41 +5,60 @@
 字符串比较在 "0.2.1-rc.1" vs "0.2.0-rc.2" 上给出相反答案，
 而这类错误不会抛异常、不会进日志，只会让闸门放行错版本或错误地回滚。
 
-其他实现（容器里的 POSIX sh、壳里的 node）必须与同一张向量表对齐 —— 见 docs/versioning.md §9。
+三份实现（Python / POSIX sh / Node）必须与同一张表 spec/gate-vectors.json 逐条一致：
+    python3 tools/check-gate.py
+
+严格性（三份实现统一，不做 trim）:
+  - 核心三段数字不允许前导零；必须恰好三段
+  - prerelease 标识符只允许 [0-9A-Za-z-]，纯数字的标识符不允许前导零
+  - build 元数据只允许 [0-9A-Za-z-]，可带前导零，且**不参与比较**
 
 用法:
-    python3 tools/semver.py            # 跑自检向量表
+    python3 tools/semver.py                        # 跑 spec 里全部向量
+    python3 tools/semver.py --batch vectors.tsv    # 每行「命令<TAB>参数…」→ 一行结果
     from semver import compare, is_valid
 """
 
+import json
+import os
 import re
+import sys
 
-# 严格按 semver 2.0.0 的 BNF：不允许前导零、不允许缺段、只允许 ASCII 字母数字与连字符
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+SPEC_PATH = os.path.join(ROOT, "spec", "gate-vectors.json")
+
 _SEMVER_RE = re.compile(
     r"^(0|[1-9][0-9]*)"
     r"\.(0|[1-9][0-9]*)"
     r"\.(0|[1-9][0-9]*)"
-    r"(?:-((?:[0-9A-Za-z-]+)(?:\.[0-9A-Za-z-]+)*))?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?"
+    r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
 
 
 def parse(version):
     """返回 (major, minor, patch, pre_tuple)；非法返回 None。
 
-    pre_tuple 里：数字段是 int（用于数值比较），字母段是 str（用于 ASCII 字典序）。
-    无 prerelease 时为 ()。
+    pre_tuple 里：纯数字段是 int（数值比较），其余是 str（ASCII 字典序）。
+    build 元数据解析后丢弃（不参与比较）。
     """
     if not isinstance(version, str):
         return None
-    m = _SEMVER_RE.match(version.strip())
+    m = _SEMVER_RE.match(version)          # 严格：不做 strip
     if not m:
         return None
-    major, minor, patch = int(m.group(1)), int(m.group(2)), int(m.group(3))
     pre = m.group(4)
-    if pre is None:
-        return (major, minor, patch, ())
-    return (major, minor, patch, tuple(int(p) if p.isdigit() else p for p in pre.split(".")))
+    ids = []
+    if pre:
+        for part in pre.split("."):
+            if part.isdigit():
+                if len(part) > 1 and part[0] == "0":
+                    return None            # 数字段前导零 → 非法
+                ids.append(int(part))
+            else:
+                ids.append(part)
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3)), tuple(ids))
 
 
 def is_valid(version):
@@ -47,7 +66,7 @@ def is_valid(version):
 
 
 def _compare_pre(a, b):
-    # 规则：有 prerelease 的版本 < 无 prerelease 的版本
+    # 有 prerelease 的版本 < 无 prerelease 的版本
     if not a and not b:
         return 0
     if not a:
@@ -90,46 +109,80 @@ def gt(a, b):
     return compare(a, b) > 0
 
 
-# (a, b, 期望 compare(a,b))；最后若干条是向量表将来要同步给 sh / node 的那张表
-VECTORS = [
-    ("0.2.1-rc.1", "0.2.0-rc.2", 1),      # 字典序会给出相反答案：本题的经典陷阱
-    ("0.2.0", "0.2.0-rc.2", 1),           # final > 所有 rc
-    ("0.2.0-rc.2", "0.2.0-rc.2", 0),
-    ("0.2.0-rc.10", "0.2.0-rc.9", 1),     # rc.10 > rc.9（字典序会反）
-    ("0.2.0-rc.2", "0.2.0-rc.10", -1),
-    ("1.0.0-alpha", "1.0.0-alpha.1", -1),
-    ("1.0.0-alpha.1", "1.0.0-alpha.beta", -1),   # 数字段 < 字母段
-    ("1.0.0-alpha.beta", "1.0.0-beta", -1),
-    ("1.0.0-beta", "1.0.0-beta.2", -1),
-    ("1.0.0-beta.2", "1.0.0-beta.11", -1),
-    ("1.0.0-beta.11", "1.0.0-rc.1", -1),
-    ("1.0.0-rc.1", "1.0.0", -1),
-    ("1.0.0+build.1", "1.0.0", 0),        # build 元数据忽略
-    ("0.2.1-rc.2", "0.2.0-rc.2", 1),
-    ("10.0.0", "9.9.9", 1),
-]
+# ---------- 一张表 → 若干条待验证的用例（自检与三实现对照共用） ----------
 
-INVALID = ["0.2", "v0.2.0", "01.2.3", "1.2.3-", "", "1.2.3.4", "1.2.x"]
+def build_rows(spec):
+    """把 spec 摊平成 [(kind, args, expect, why)]；chain 展开成相邻对。"""
+    rows = []
+    for c in spec.get("compare", []):
+        rows.append(("compare", (c["a"], c["b"]), str(c["expect"]), c.get("why", "")))
+    chain = spec.get("chain", {}).get("versions", [])
+    for x, y in zip(chain, chain[1:]):
+        rows.append(("compare", (x, y), "-1", "chain: %s < %s" % (x, y)))
+    for c in spec.get("check", []):
+        rows.append(("check", (c["v"],), c["expect"], c.get("why", "")))
+    return rows
 
 
-def _self_test():
-    failures = 0
-    for a, b, want in VECTORS:
-        got = compare(a, b)
-        if got != want:
-            failures += 1
-            print("FAIL compare(%r, %r) = %d，期望 %d" % (a, b, got, want))
-    for v in INVALID:
-        if is_valid(v):
-            failures += 1
-            print("FAIL is_valid(%r) 应为 False" % (v,))
-    total = len(VECTORS) + len(INVALID)
-    if failures:
-        print("向量表 %d 条，失败 %d 条" % (total, failures))
+def evaluate(kind, args):
+    """单条用例的本实现结果；畸形输入返回 error。"""
+    try:
+        if kind == "compare":
+            if len(args) != 2:
+                return "error"
+            try:
+                return str(compare(args[0], args[1]))
+            except ValueError:
+                return "invalid"
+        if kind == "check":
+            if len(args) != 1:
+                return "error"
+            return "ok" if is_valid(args[0]) else "invalid"
+        return "error"
+    except Exception:
+        return "error"
+
+
+def load_spec(path=SPEC_PATH):
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def batch(path):
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            parts = line.split("\t")
+            print(evaluate(parts[0], parts[1:]))
+    return 0
+
+
+def self_test(path=SPEC_PATH):
+    spec = load_spec(path)
+    rows = build_rows(spec)
+    fails = []
+    for kind, args, expect, why in rows:
+        got = evaluate(kind, args)
+        if got != expect:
+            fails.append((kind, args, expect, got, why))
+    print("向量 %d 条（compare %d / check %d）" % (
+        len(rows),
+        sum(1 for r in rows if r[0] == "compare"),
+        sum(1 for r in rows if r[0] == "check")))
+    if fails:
+        for kind, args, expect, got, why in fails:
+            print("FAIL %s %s 期望 %s 实得 %s  [%s]" % (kind, list(args), expect, got, why))
+        print("失败 %d 条" % len(fails))
         return 1
-    print("向量表 %d 条全部通过（%d 条比较 + %d 条非法）" % (total, len(VECTORS), len(INVALID)))
+    print("全部通过")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(_self_test())
+    if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
+        raise SystemExit(batch(sys.argv[2]))
+    if len(sys.argv) >= 2 and sys.argv[1] == "--spec":
+        raise SystemExit(self_test(sys.argv[2]))
+    raise SystemExit(self_test())

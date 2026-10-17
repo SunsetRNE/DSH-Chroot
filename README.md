@@ -68,6 +68,18 @@
 | [docs/baseline.md](docs/baseline.md) | 基线定义：Ubuntu 24.04 / Node 24 / pnpm 11.x / DSH 基线 |
 | [docs/versioning.md](docs/versioning.md) | 版本号、`module.prop`、命名分工、semver 闸门 |
 
+## 开发
+
+不需要任何依赖（只要 python3 与 node）：
+
+```bash
+python3 tools/check-gate.py            # 三份实现 × 一张向量表（版本比较写错是静默错误，这里不靠自觉）
+python3 tools/gen-version.py --draft   # 从 tools/version.env 生成 build/（发布前去掉 --draft，占位会直接报错）
+```
+
+需要说明的一点：版本比较是本项目**唯一写错会静默出错**的地方 —— `"0.2.1-rc.1" < "0.2.0-rc.2"` 在字典序上成立，
+语义上恰好相反。所以它有三份实现（Python / POSIX sh / Node）、一张共同的向量表，改规则必须三处一起过。
+
 ## 许可
 
 [MIT](LICENSE) © 2026 SunsetRNE
