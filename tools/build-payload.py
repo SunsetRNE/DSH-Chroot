@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""tools/build-payload.py —— payload 的**规范实现**：打包、校验、自测（ADR-024）。
+"""tools/build-payload.py —— payload 的**规范实现**（两层版）：打包、校验、自测（ADR-024）。
 
-payload 是什么：模块 zip 之外那个"真正的大件"（Ubuntu 侧 runtime + Node + DSH 基线）。
-它不随模块分发（ADR-024 决定 A），而是作为独立产物落到 inbox 或 Release。
+两层（2026-10-18 裁决）:
+    node 层：node + npm + pnpm          → base/node/          （不随 DSH 版本变）
+    dsh  层：dsh 树 + bin wrapper       → base/dsh-<baked>/   （每个 baked 一份）
 
-产物（两个文件，放进 inbox 即成对）:
-    payload-<baked>.tar.gz     内容: payload.meta.json + node/ + dsh/ + bin/
-    payload.json               旁挂清单: 上述 meta + sha256 + size（壳读这个）
+产物（每个层两件套，成对投递）:
+    node-<ver>.tar.gz    + node.json
+    dsh-<baked>.tar.gz   + dsh.json
 
-为什么 meta 与清单分开：sha256 不能写进被它哈希的归档里（自指）。所以
-    - 归档内: payload.meta.json（自描述，无 sha256）
-    - 归档外: payload.json（= meta + sha256 + size，壳的校验依据）
-解包后壳还会比对两者的 baked，防止"清单说的和包里装的不是一回事"。
+为什么清单与归档分开：sha256 不能写进被它哈希的归档里（自指）。
+    归档内：<kind>.meta.json（自描述，无 sha256）
+    归档外：<kind>.json（meta + sha256 + size，壳的校验依据）
 
 确定性（可复现构建）:
     条目排序 · uid/gid=0 · uname/gname 空 · mtime 固定（SOURCE_DATE_EPOCH，默认 1704067200）
-    · gzip mtime=0 → 同样的输入永远得到同一个 sha256，sha256 才有资格当版本锚点。
+    · gzip mtime=0 → 同样输入永远同一个 sha256，sha256 才有资格当版本锚点。
 
 用法:
-    python3 tools/build-payload.py --stage DIR [--out DIR] [--baked V] [--node V] [--pnpm V]
-    python3 tools/build-payload.py --verify FILE --manifest payload.json
+    python3 tools/build-payload.py --kind node --version 24.19.0 --stage DIR
+    python3 tools/build-payload.py --kind dsh  --baked 0.2.0-rc.2 --stage DIR
+    python3 tools/build-payload.py --verify FILE --manifest node.json
     python3 tools/build-payload.py --selftest
 """
 
@@ -36,8 +37,11 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DEFAULT_EPOCH = 1704067200  # 2024-01-01T00:00:00Z
-META_NAME = "payload.meta.json"
-REQUIRED = ("node/bin/node", "dsh/package.json")
+
+KINDS = {
+    "node": {"meta": "node.meta.json", "required": ("bin/node",)},
+    "dsh": {"meta": "dsh.meta.json", "required": ("dsh/package.json",)},
+}
 
 
 def die(msg):
@@ -67,7 +71,6 @@ def sha256_of(path):
 
 
 def collect(stage):
-    """按相对路径排序收集文件（符号链接单独处理）。"""
     entries = []
     for base, dirs, files in os.walk(stage):
         dirs.sort()
@@ -87,37 +90,36 @@ def collect(stage):
     return entries
 
 
-def build(stage, out_dir, baked, node_ver, pnpm_ver, epoch=DEFAULT_EPOCH):
-    for req in REQUIRED:
+def build(kind, stage, out_dir, version, epoch=DEFAULT_EPOCH, pnpm=None):
+    spec = KINDS[kind]
+    for req in spec["required"]:
         if not os.path.exists(os.path.join(stage, req)):
-            die("stage 缺少必需项: " + req)
+            die(kind + " 层缺少必需项: " + req)
 
-    meta = {
-        "schema": 1,
-        "baked": baked,
-        "node": node_ver,
-        "pnpm": pnpm_ver,
-        "distro": {"name": "ubuntu", "release": "noble", "version": "24.04", "libc": "glibc"},
-        "layer": baked,
-        "created_at": epoch,
-    }
-    with open(os.path.join(stage, META_NAME), "w", encoding="utf-8") as fh:
+    meta = {"schema": 1, "layer": kind, "created_at": epoch}
+    if kind == "node":
+        meta["version"] = version
+        meta["pnpm"] = pnpm or "11.0.0"
+    else:
+        meta["baked"] = version
+        meta["distro"] = {"name": "ubuntu", "release": "noble", "version": "24.04", "libc": "glibc"}
+    with open(os.path.join(stage, spec["meta"]), "w", encoding="utf-8") as fh:
         fh.write(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
 
     os.makedirs(out_dir, exist_ok=True)
-    tar_path = os.path.join(out_dir, "payload-%s.tar.gz" % baked)
+    tar_path = os.path.join(out_dir, "%s-%s.tar.gz" % (kind, version))
     raw = io.BytesIO()
     with tarfile.open(fileobj=raw, mode="w", format=tarfile.GNU_FORMAT) as tar:
-        for kind, rel, extra in collect(stage):
+        for k, rel, extra in collect(stage):
             info = tarfile.TarInfo(rel)
             info.uid = info.gid = 0
             info.uname = info.gname = ""
             info.mtime = epoch
-            if kind == "dir":
+            if k == "dir":
                 info.type = tarfile.DIRTYPE
                 info.mode = 0o755
                 tar.addfile(info)
-            elif kind == "link":
+            elif k == "link":
                 info.type = tarfile.SYMTYPE
                 info.linkname = extra
                 info.mode = 0o777
@@ -136,7 +138,7 @@ def build(stage, out_dir, baked, node_ver, pnpm_ver, epoch=DEFAULT_EPOCH):
     digest = sha256_of(tar_path)
     size = os.path.getsize(tar_path)
     manifest = dict(meta, sha256=digest, size=size)
-    manifest_path = os.path.join(out_dir, "payload.json")
+    manifest_path = os.path.join(out_dir, kind + ".json")
     with open(manifest_path, "w", encoding="utf-8") as fh:
         fh.write(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n")
     return tar_path, manifest_path, digest, size
@@ -145,6 +147,10 @@ def build(stage, out_dir, baked, node_ver, pnpm_ver, epoch=DEFAULT_EPOCH):
 def verify(tar_path, manifest_path):
     with open(manifest_path, encoding="utf-8") as fh:
         manifest = json.load(fh)
+    kind = manifest.get("layer")
+    if kind not in KINDS:
+        print("FAIL 清单里的 layer 不认识: %r" % (kind,), file=sys.stderr)
+        return 1
     digest = sha256_of(tar_path)
     problems = []
     if manifest.get("sha256") != digest:
@@ -153,55 +159,62 @@ def verify(tar_path, manifest_path):
         problems.append("size 不匹配")
     with tarfile.open(tar_path, "r:gz") as tar:
         names = tar.getnames()
-        if META_NAME not in names:
-            problems.append("归档里没有 " + META_NAME)
+        if KINDS[kind]["meta"] not in names:
+            problems.append("归档里没有 " + KINDS[kind]["meta"])
         else:
-            inner = json.load(tar.extractfile(META_NAME))
-            for key in ("baked", "node", "pnpm"):
-                if inner.get(key) != manifest.get(key):
+            inner = json.load(tar.extractfile(KINDS[kind]["meta"]))
+            for key in ("version", "baked", "pnpm"):
+                if key in manifest and inner.get(key) != manifest.get(key):
                     problems.append("meta 与清单不一致: %s（%s vs %s）"
                                     % (key, inner.get(key), manifest.get(key)))
     if problems:
         for p in problems:
             print("FAIL " + p, file=sys.stderr)
         return 1
-    print("一致: %s（baked=%s sha256=%s… size=%d）"
-          % (os.path.basename(tar_path), manifest.get("baked"), digest[:12], os.path.getsize(tar_path)))
+    print("一致: %s（%s=%s sha256=%s… size=%d）"
+          % (os.path.basename(tar_path), "baked" if kind == "dsh" else "version",
+             manifest.get("baked") or manifest.get("version"), digest[:12],
+             os.path.getsize(tar_path)))
     return 0
+
+
+def _make_stage(root, kind):
+    stage = os.path.join(root, "stage-" + kind)
+    if kind == "node":
+        os.makedirs(os.path.join(stage, "bin"))
+        with open(os.path.join(stage, "bin", "node"), "w") as fh:
+            fh.write("#!/bin/sh\necho v24.19.0\n")
+        os.chmod(os.path.join(stage, "bin", "node"), 0o755)
+        os.symlink("bin/node", os.path.join(stage, "node"))
+    else:
+        os.makedirs(os.path.join(stage, "dsh"))
+        with open(os.path.join(stage, "dsh", "package.json"), "w") as fh:
+            fh.write('{"name":"@deepseek-ai/dsh","version":"0.2.0-rc.2"}\n')
+    return stage
 
 
 def selftest():
     import shutil
     tmp = tempfile.mkdtemp(prefix="payload-selftest.")
+    ok = True
     try:
-        stage = os.path.join(tmp, "stage")
-        os.makedirs(os.path.join(stage, "node", "bin"))
-        os.makedirs(os.path.join(stage, "dsh"))
-        with open(os.path.join(stage, "node", "bin", "node"), "w") as fh:
-            fh.write("#!/bin/sh\necho v24.19.0\n")
-        os.chmod(os.path.join(stage, "node", "bin", "node"), 0o755)
-        with open(os.path.join(stage, "dsh", "package.json"), "w") as fh:
-            fh.write('{"name":"@deepseek-ai/dsh","version":"0.2.0-rc.2"}\n')
-        os.symlink("bin/node", os.path.join(stage, "node", "node"))
-
-        out1 = os.path.join(tmp, "out1")
-        out2 = os.path.join(tmp, "out2")
-        t1, m1, d1, s1 = build(stage, out1, "0.2.0-rc.2", "24.19.0", "11.0.0")
-        t2, m2, d2, s2 = build(stage, out2, "0.2.0-rc.2", "24.19.0", "11.0.0")
-        ok = True
-        if d1 != d2:
-            print("FAIL 非确定性：两次构建 sha256 不同 %s vs %s" % (d1, d2))
-            ok = False
-        if verify(t1, m1) != 0:
-            ok = False
-        # 篡改后必须失败
-        with open(t1, "ab") as fh:
-            fh.write(b"tamper")
-        if verify(t1, m1) == 0:
-            print("FAIL 篡改后的包竟然通过了校验")
-            ok = False
+        for kind, version in (("node", "24.19.0"), ("dsh", "0.2.0-rc.2")):
+            stage = _make_stage(tmp, kind)
+            o1, o2 = os.path.join(tmp, "o1-" + kind), os.path.join(tmp, "o2-" + kind)
+            t1, m1, d1, _ = build(kind, stage, o1, version)
+            t2, m2, d2, _ = build(kind, stage, o2, version)
+            if d1 != d2:
+                print("FAIL 非确定性（%s）：两次构建 sha256 不同" % kind)
+                ok = False
+            if verify(t1, m1) != 0:
+                ok = False
+            with open(t1, "ab") as fh:
+                fh.write(b"tamper")
+            if verify(t1, m1) == 0:
+                print("FAIL 篡改后的包竟然通过了校验（%s）" % kind)
+                ok = False
         if ok:
-            print("自测通过：确定性构建 + 校验 + 篡改检测")
+            print("自测通过：两层各自确定性构建 + 校验 + 篡改检测")
         return 0 if ok else 1
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -209,10 +222,11 @@ def selftest():
 
 def main(argv):
     ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--kind", choices=sorted(KINDS))
     ap.add_argument("--stage")
     ap.add_argument("--out", default=os.path.join(ROOT, "build"))
+    ap.add_argument("--version")
     ap.add_argument("--baked")
-    ap.add_argument("--node")
     ap.add_argument("--pnpm")
     ap.add_argument("--epoch", type=int, default=DEFAULT_EPOCH)
     ap.add_argument("--verify")
@@ -226,22 +240,24 @@ def main(argv):
         if not args.manifest:
             die("--verify 必须同时给 --manifest")
         return verify(args.verify, args.manifest)
-    if not args.stage:
-        die("需要 --stage DIR（或 --selftest / --verify）")
+    if not args.kind or not args.stage:
+        die("需要 --kind 与 --stage（或 --selftest / --verify）")
 
     env = read_env()
-    baked = args.baked or env.get("DSH_BAKED")
-    if not baked:
-        die("拿不到 baked 版本：--baked 或 tools/version.env 的 DSH_BAKED")
-    if env.get("DSH_BAKED") and args.baked and args.baked != env["DSH_BAKED"]:
-        die("--baked(%s) 与 version.env 的 DSH_BAKED(%s) 不一致" % (args.baked, env["DSH_BAKED"]))
+    if args.kind == "node":
+        version = args.version or "24.19.0"
+    else:
+        version = args.baked or env.get("DSH_BAKED")
+        if not version:
+            die("dsh 层需要 --baked，或 version.env 的 DSH_BAKED")
+        if env.get("DSH_BAKED") and args.baked and args.baked != env["DSH_BAKED"]:
+            die("--baked(%s) 与 version.env 的 DSH_BAKED(%s) 不一致" % (args.baked, env["DSH_BAKED"]))
 
-    node_ver = args.node or os.environ.get("PAYLOAD_NODE") or "24.19.0"
-    pnpm_ver = args.pnpm or os.environ.get("PAYLOAD_PNPM") or "11.0.0"
-    tar_path, manifest_path, digest, size = build(args.stage, args.out, baked, node_ver, pnpm_ver, args.epoch)
+    tar_path, manifest_path, digest, size = build(args.kind, args.stage, args.out,
+                                                  version, args.epoch, args.pnpm)
     print("写入 %s（%d 字节，sha256 %s…）" % (os.path.relpath(tar_path, ROOT), size, digest[:12]))
     print("写入 %s" % os.path.relpath(manifest_path, ROOT))
-    print("baked=%s node=%s pnpm=%s" % (baked, node_ver, pnpm_ver))
+    print("layer=%s version=%s" % (args.kind, version))
     return 0
 
 

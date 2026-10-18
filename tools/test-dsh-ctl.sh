@@ -19,6 +19,7 @@ _no() { FAIL=$((FAIL + 1)); printf '  FAIL %s\n' "$1"; [ -n "${2:-}" ] && printf
 T=$(mktemp -d /tmp/dsh-ctl-test.XXXXXX)
 export DSH_ROOT="$T"
 export DSH_RUNTIME=fake
+export DSH_PATH_OVERRIDE=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 run() {
     _desc=$1; _want=$2; shift 2

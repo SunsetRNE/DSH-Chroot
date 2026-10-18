@@ -46,6 +46,7 @@
     "base/node": "sha256:REPLACE_ME",
     "base/dsh-0.2.0-rc.2": "sha256:REPLACE_ME"
   },
+  "_layers_note": "两层（2026-10-18 裁决）：base/node <- node-<ver>.tar.gz，base/dsh-<baked> <- dsh-<baked>.tar.gz；值是两 tarball 的 sha256（见 docs/payload.md）。active 只指向 dsh 层；打包后用 build-payload 的真实哈希替换 REPLACE_ME。",
 
   "runtime": {
     "dsh_cmd": "dsh",

@@ -117,7 +117,12 @@
   ```
   可写性：`/storage/emulated/0` ✅ · `/DCIM` ✅ · `/Download` ✅
   顶层可见：DCIM · Documents · Download · Movies · Music · Pictures · Android · BaiduNetdisk · backups …
-- **注意**：这是 **DSHA 的 proot 启动参数**加上去的（`libproot.so … -b /storage/emulated/0:/sdcard -b /storage/emulated/0`）→ **新模块形态下默认不会出现**，所以"限制"不是拆固化的东西，而是**默认不加**。
+- **注意**：这是 **DSHA 的 proot 启动参数**加上去的（`libproot.so … -b /storage/emulated/0:/sdcard -b /storage/emulated/0`）。
+- ⚠️ **2026-10-18 修正（原来那句"新模块形态下默认不会出现"是错的）**：chroot-distro 的 `android-bind` **默认 enable**，
+  会把 **Android 根目录整体 bind 进容器**（实测容器根下出现 `apex` / `bootstrap-apex` 这类挂点；`/proc/mounts` 在容器内就是宿主的表）。
+  → 也就是说 **`/sdcard` 的暴露面会自己回来**，不是"不加就没有"。
+- **处置方向（待实现）**：bootstrap 里显式 `chroot-distro android-bind disable`，改由壳按 [ADR-016](./decisions.md) 的挂载表**逐条显式 bind**；
+  在此之前，这条暴露面按"存在"记账，不按"已消除"记账。
 - **缺口**：ADR-016 只写了"**共享目录默认只给沙箱**"，那是**约定，没有约束力** —— 缺一条硬约束 + 申请通道。
 - **根因**（上游事实）：`fs-sandbox` **只管写，读完全不管**（原文："preserving the local filesystem's read behavior"）→ **可见性只能靠挂载**。
 

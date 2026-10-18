@@ -29,6 +29,14 @@
 - **payload 规范与打包器**：[docs/payload.md](docs/payload.md) 定两件套（`payload-<baked>.tar.gz` + `payload.json`）、
   归档布局（`rootfs/` 可选 · `node/` · `dsh/` · `bin/`）、schema-1 字段、四道校验链；
   `tools/build-payload.py` 做**确定性**构建（排序 / uid=0 / 固定 mtime / gzip mtime=0）+ `--verify` + `--selftest`（确定性 + 篡改检测）
+- **裁决落地：payload 两层 + curl 修正（2026-10-18 审计）**
+  - `service.sh` 改为两层：`base/node/`（换 DSH 时**复用**）+ `base/dsh-<baked>/`（切换）；`active` 只指向 DSH 层；
+    inbox 只保留下一份同类产物；契约测试 32 条（含"换版本时 Node 层复用"与退出码 0/10/20/30/40）
+  - `tools/build-payload.py` 改为 `--kind node|dsh` 分两层构建（各自确定性 + 校验 + 自测）
+  - **ADR-013 / ADR-024 修正**：设备有 `curl 8.21.0`（HTTP2/HTTP3、OpenSSL），`/system/bin/wget` 反而不存在 → 下载器首选 curl
+  - ADR-019 补实测限定：KSU 的 `su -c` 起手就在 `/apps`，搬家只对 App 内启动有意义
+  - threat-model §6.2 修正：chroot-distro 的 `android-bind` 默认 enable，`/sdcard` 暴露面会自己回来（不是"默认没有"）
+  - research §9.1 devpts 措辞修正（宿主 vs 容器是两回事）；设备模块数 9 → 10
 - 设计文档：ADR-001 ~ ADR-024 全部拍板；威胁模型含「不设防声明」
 - **ADR-024（payload 交付形态与首启自举）**：模块 zip 永不装 payload（只装 < 1 MB 的引导器）；
   首启由壳触发/执行/监督：离线 inbox 优先 → 否则 busybox wget 下载 → 校验 → staging 解压 → 原子切指针；

@@ -17,6 +17,7 @@
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
 | **命门：容器内 PTY** | ✅ **完全闭环**（2026-10-18）：proot 实测（§9.1）+ **真 chroot 复验**（§9.1.1，chroot-distro 2.1.0 + ubuntu noble，`/dev/pts/0`） |
+| **壳骨架**（service.sh + dsh-ctl） | ✅ 2026-10-18：六条契约 + 退出码 + 两层 bootstrap（Node 层复用）· 契约测试 32 + 11 条，dash/mksh 双端与 CI 全绿 |
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | 阻塞项 | **无** |
 
@@ -150,7 +151,7 @@ L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017�
 | 系统版本串（只读） | `PJD110_16.0.10.501(CN01)`；OTA `PJD110_11.F.57_2570_202608111410`（构建 2026-08-11）；`ro.product.device=OP5929L1` | 与手上全量包同版本 → 回滚套件有效，设备一旦 OTA 更高版本即过期 |
 | 启动状态（只读） | `ro.boot.flash.locked=1` · `verifiedbootstate=green` · `veritymode=enforcing` | 抽分区 / 刷写前必须结合 ARB 再评估（见 recovery） |
 | DSH 沙箱（本机实测） | `DSH_PERMISSION_MODE=danger-full-access`（`dsh-base/cordis.patch.yml:232,248` 用同一个变量同时决定沙箱 mode 与 approval）→ 沙箱短路 + 审批设成 `never`；`landlock-run --probe` **rc=125**、`bwrap` **未安装** → **受限模式是 fail-closed**（bash 直接不可用，不是变受限） | 容器方案若要真沙箱，必须自带 `bwrap` 或换有 Landlock 的内核；且 DSH 的三个 mode **都不管网络与进程可见性**，读取路径也不受其文件边界保护 |
-| 已装模块（9 个，实读） | `WorkSettingPro` `hma_oss_zygisk` **`magic_mount_rs`**（元模块）`playintegrityfix` `rezygisk` `treat_wheel` `tricky_store` `ufi-manager` `zygisk_lsposed` | 换 / 升级模块时的冲突面已可见 |
+| 已装模块（10 个，实读；2026-10-18 起含 **`chroot-distro`**） | `WorkSettingPro` `chroot-distro` `hma_oss_zygisk` **`magic_mount_rs`**（元模块）`playintegrityfix` `rezygisk` `treat_wheel` `tricky_store` `ufi-manager` `zygisk_lsposed` | 换 / 升级模块时的冲突面已可见 |
 
 ---
 

@@ -386,8 +386,11 @@ DSHA 的价值不只是 Linux 环境，还有 Android 侧能力（读屏 / 点�
 而且 libc / Node / node-pty 的版本与目标基线一致（Ubuntu + Node 24 + node-pty 1.2.0-beta.15）。
 → 判定：**【高置信推断】chroot 里同样可用**，但仍应在真正的 chroot 容器里复验一次（脚本已备好）。
 
-**附带发现（避免误判）**：Android 的 devpts 默认 `mode=600`，因此 `ls /dev/pts` 会 **Permission denied**，
+**附带发现（避免误判）**：**宿主**的 devpts 默认 `mode=600`，所以在**宿主**上看 `ls /dev/pts` 会 Permission denied，
 但**分配 PTY 不受影响**（两条通道都拿到了 `/dev/pts/0`）。以后看到这个报错别当成"PTY 不可用"。
+
+⚠️ **2026-10-18 修正**：这条只对**宿主**成立。**容器内**完全不同 —— chroot-distro 会挂一个**自己的 devpts 实例**
+（其源码里 `mount -t devpts`），实测容器内 `ls /dev/pts/` 正常返回 `0 ptmx`。两件事别混。
 
 **复验工具**：`tools/verify-pty.sh`（node-pty 与 python pty 双通道，任一路通过即 OK）
 

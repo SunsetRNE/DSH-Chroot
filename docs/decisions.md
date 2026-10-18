@@ -363,8 +363,12 @@ dsh-ctl upgrade <ver>   # 手动抬升 DSH：唯一推荐入口（“0 插件更
 
 | | 结果 |
 |---|---|
-| **可用** | `sh` · `toybox` · `setsid` · `flock` · `tar` · `unzip` · `gzip` · `bzip2` · `cpio` · `mount`/`umount` · `readlink` · `chcon` · `chown` · `stat` · `mktemp` · `find` · `xargs` · `sed` · `awk` · `grep` · `tr` · `cut` · `nohup` |
-| **不可用** | `zstd` · `xz` · `lz4` · `7z` · `zip` · `pigz` · `start-stop-daemon`。`busybox` **不在** `/system/bin`，但 **`/data/adb/ksu/bin/busybox` 在**（1.7 MB，可作兜底） |
+| **可用** | `sh` · `toybox` · `setsid` · `flock` · `tar` · `unzip` · `gzip` · `bzip2` · `cpio` · `mount`/`umount` · `readlink` · `chcon` · `chown` · `stat` · `mktemp` · `find` · `xargs` · `sed` · `awk` · `grep` · `tr` · `cut` · `nohup` · **`curl`** |
+| **不可用** | `zstd` · `xz` · `lz4` · `7z` · `zip` · `pigz` · `start-stop-daemon` · **`wget`**（`/system/bin` 层面）。`busybox` **不在** `/system/bin`，但 **`/data/adb/ksu/bin/busybox` 在**（1.7 MB，可作兜底） |
+
+> ⚠️ **2026-10-18 修正**：原始表格把 `curl` 列进了"不可用"，**是错的**。实测这台设备 `/system/bin/curl` 是 **654 KB 的真实二进制**，
+> 版本 `curl 8.21.0 (aarch64-unknown-linux-android)`，特性含 **HTTP2 / HTTP3 / HTTPS-proxy / threadsafe**（libcurl 8.21.0 + OpenSSL 3.6.3）；
+> 反而 `/system/bin/wget` 不存在。→ 下载器首选 **curl**（`-C -` 断点续传 / `--retry` / `--fail` / 进度），`busybox wget` 只作兜底。
 
 由此得到两条硬规则：
 
@@ -602,7 +606,7 @@ dsh-ctl upgrade <ver>   # 手动抬升 DSH：唯一推荐入口（“0 插件更
 
 | 观察 | 说明 |
 |---|---|
-| 9 个模块里 **8 个带 `uninstall.sh`** | 惯例成立（`WorkSettingPro`、`ufi-manager` 没有） |
+| 10 个模块里 **8 个带 `uninstall.sh`** | 惯例成立（`WorkSettingPro`、`ufi-manager` 没有；2026-10-18 新增的 `chroot-distro` 也没有） |
 | `tricky_store/uninstall.sh`（9 行） | **先杀进程**（`pidof` + `kill -9`）**再删数据**；还顺手删了 `/data/media/0/TEESimulator`（**外置存储**上的诊断目录）→ 一次印证三件事：进程不会自动停、外置存储也要清、这活必须自己干 |
 | `magic_mount_rs/metauninstall.sh` | 空实现（`exit 0`），而 `/data/adb/magic_mount/` 里留着 `config.toml` / `scan.ret` → **残留的活样本** |
 | `/data/adb/ksu/module_configs/` | 有模块级配置（如 `magic_mount_rs`）→ 管理器**不一定清** |
@@ -794,6 +798,9 @@ cgroup v2：/sys/fs/cgroup/apps/cgroup.procs
 - ⛔ **搬不动必须显式报出来**（SELinux 可能拦其中某些）—— **绝不能假装成功**：
   `status` 显示"已脱离"而实际还在 App 树里，比不搬更糟。
 - **正路不需要搬家**：开机由模块 `service.sh` 启动时，祖先链是 `init → magiskd/ksud → service.sh`，继承下来就是对的。
+- **2026-10-18 补充实测（限定场景）**：从 Termux 走 `su -c` 起步时，cgroup 已在 `/apps`（`dsh-ctl` 报"无需搬"）。
+  也就是说**搬家只对"App 内启动"有意义**（例：DSHA 容器落在 `/apps/com.dsh.client`）；本项目主路径它不是刚需，
+  保留为 best-effort（搬不动就如实报）即可，**不要当它是必需步骤**。
 
 ### 决定 C：四条可测的验收判据（进 `dsh-ctl status`）
 
@@ -1214,12 +1221,15 @@ idle ──► downloading ──► verifying ──► unpacking ──► rea
 ```
 
 - 每个阶段结束后**先落盘状态再进下一阶段**（写失败就停，不硬闯）。
-- 解压走 **staging + 原子切换**：解到 `base/.staging-<ver>/` → sha256 对账 → 改名 `base/<ver>/` → 原子切 `active` 指针（ADR-009 的"先停后换"同样适用）。
+- 解压走 **staging + 原子切换**：解到 `base/.staging-*/` → sha256 对账 → 改名 → 原子切 `active` 指针（ADR-009 的"先停后换"同样适用）。
+- **两层（2026-10-18 裁决）**：`base/node/`（Node 层，不随 DSH 版本变）+ `base/dsh-<baked>/`（DSH 层）；`active` 只指向 DSH 层。
+  Node 层已装且版本相同则**复用不重装** —— 这是两层相对单层的唯一实质收益（省流量 / 省解压时间），代价是 `manifest.layers` 有两行哈希、bootstrap 要多一步判定。
 - 任何一步失败：`active` **保持不动**，用户仍能用上一个版本。
 
 ### 决定 E：三条设备侧硬约束
 
-1. **设备上没有 `curl`**：下载只能用 **`busybox wget`**（KSU 自带的那个；ADR-013 决定 C 的工具清单里没有 curl）。断点续传靠 `wget -c`。
+1. **下载器用 `curl`**（2026-10-18 修正）：设备 `/system/bin/curl` = 8.21.0（HTTP2/HTTP3、OpenSSL），
+   断点续传 `-C -`、重试 `--retry 3`、失败判定 `--fail`。`busybox wget` 只在没有 curl 的 ROM 上作兜底（`/system/bin/wget` 不存在）。
 2. **解压前查空间**：压缩包与解压副本会同时在，峰值 ≈ 2×；空间不足要**提前** exit 30，不许解到一半才炸。
 3. **纯 POSIX sh**：判定与切指针都在 `service.sh` 里，不能借用容器里的 Python/Node（那时容器还没起来）。
 
