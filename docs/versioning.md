@@ -1,6 +1,7 @@
 # 版本号与 module.prop 规范
 
-> 本文记录项目采用的版本规范（[ADR-010](./decisions.md)）。**所有版本字面量只有一个真源**，见 §5。
+> 本文记录项目采用的版本规范（[ADR-010](./decisions.md)；第 4 位已由 [ADR-025](./decisions.md) 修订）。
+> **版本字面量分三个真源，各管一件事**，见 §5。
 
 ---
 
@@ -9,7 +10,7 @@
 ```
 id=<模块唯一化 ID>
 name=<模块名称>
-version=<大版本>.<功能变更新增版本>.<补丁版本号>.<DSH内置版本号>
+version=<大版本>.<功能变更新增版本>.<补丁版本号>.<烘焙序号>
 versionCode=<面向 Root 管理器的整数，变更则 +1>
 author=SunsetRNE
 description=<描述信息>
@@ -21,7 +22,7 @@ managedFeatures=<管理特性，逗号分隔，Root 管理器标签>   ← 语�
 |---|---|
 | `id` | 必须匹配 `^[a-zA-Z][a-zA-Z0-9._-]+$`；本项目固定为 **`Zodiac-Quill-Saga`**，**发布后不可改**（§8） |
 | `name` | 面向用户显示 |
-| `version` | **四位**：大版本 / 功能变更新增 / 补丁 / **DSH 内置版本号** |
+| `version` | **四位**：大版本 / 功能变更新增 / 补丁 / **烘焙序号（烘焙台账 `seq`）** |
 | `versionCode` | 整数、**单调递增**；= 变更了多少次（见 §3），**与 `version` 无推导关系** |
 | `author` | 固定 `SunsetRNE` |
 | `description` | 一句话说清"这是什么" |
@@ -34,36 +35,50 @@ managedFeatures=<管理特性，逗号分隔，Root 管理器标签>   ← 语�
 
 ```
  1 . 0 . 0 . 1
- │   │   │   └── 内置 DSH 版本号（随"模块最低支持 DSH 版本"对齐）
+ │   │   │   └── 第 4 位：烘焙事件序号（由 baseline/bake-ledger.json 生成）
  │   │   └────── 补丁版本号
  │   └────────── 功能变更新增版本
  └────────────── 大版本
 ```
 
-**第四位的定义（已定）**：它是**内置到容器里的那个 DSH 版本号**。
+**第 4 位的定义（2026-10-18 定稿 → [ADR-025](./decisions.md)）**：它是**"第几次把一份 DSH 烘焙进 payload"**的计数，
+从 `1` 起递增、只增不减。它**对着 `baked`（容器里装的那一份），不对着 `floor`（允许的最低版本）**。
 
-必须满足的约束：
+必须满足的约束，以及它们各自靠什么保证：
 
-1. **单调**：内置的 DSH 版本越高，这一位越大（只增不减）〔本条为我补充的通用约束〕；
-2. **稳定**：同一个 DSH 版本永远对应同一个写法（否则历史版本会"变意思"）〔本条为我补充的通用约束〕；
-3. **与 `manifest.json` 的 `floor` 对齐** —— 抬高 floor 必须同时抬这一位，否则用户看到的"内置 DSH 版本"与实际闸门不一致；
-4. **与 payload 里的 baked 版本一致** —— 三者（`version` 第 4 位 / `manifest.baked` / payload 内的 DSH 版本）说的是同一件事。
+| 约束 | 怎么保证 |
+|---|---|
+| **单调**：只增不减 | 台账只追加；`seq` 必须从 1 连续递增（生成器校验，跳号即 exit 2） |
+| **稳定**：同一 baked 永远同一写法 | 台账是历史，不许改旧条目；生成器只读最后一条 |
+| **与 `manifest.baked` 一致** | **同一处派生**：`seq` 与 `baked` 都取自台账最后一条，不是人工核对 |
+| **与 payload 的 dsh 层一致** | `tools/build-payload.py` 的默认 `--baked` 也取自台账最后一条 |
 
-**第 4 位的来源通道（已定 → ADR-022）**：只认 **RC 通道**（`-rc.N`）—— 内置基线**不追 alpha**，所以这一位不会有 alpha 版本。
-（⚠️ 通道与写法是**两件事**：通道已定（只追 RC）；写法也已定（见下一条）。）
+**为什么不对着 `floor`**：`floor` 是"允许的最低版本"，它变化时**容器里装的东西没变**；把第 4 位绑到 floor，
+"内置版本"这个名字就名不副实。`floor ≤ baked` 本来就允许两者不同（见 [baseline §7](./baseline.md)）。所以：
 
-**第 4 位写什么形式（已定 → 2026-10-17）**：**映射序号** —— 第几次烘焙内置基线，就从 `1` 起递增（`1` = DSH `0.2.0-rc.2`）。
-理由：这一位只给人看，没有消费方拿它做运算；权威 semver 在 `manifest.baked`。而"从 semver 自动编码"有**单调性陷阱**——
-`0.2.0-rc.2` 若编成 `20002`，那正式版 `0.2.0` 无论怎么编都比它小（semver 里 final > 所有 rc），除非编成 `20099` 这种怪值。
-序号法把"只增不减"变成**人工可核对的一条规则**，生成器负责在 `module.prop` 顶部注释里写明 `第 4 位为 N` 对应的 DSH 版本。
-（生成器另有一道闸：`floor ≤ baked`、`recommended > baked`，都用真正的 prerelease 感知比较，见 §9。）
+- 换 `baked` → 第 4 位 +1（在台账里记一行）
+- 只抬 `floor` → 第 4 位**不变**（只抬补丁位）
+
+> 今天 `floor == baked == 0.2.0-rc.2` 只是巧合，不是约束。
+
+**第 4 位的来源通道（ADR-022）**：只认 **RC 通道**（`-rc.N`）—— 内置基线**不追 alpha**，所以这一位不会有 alpha 版本。
+
+**为什么只能是计数、不能是 semver 编码**：
+
+```
+1.0.0  <  1.0.1-0  <  1.0.1-0.0  <  1.0.1-0.0.0  <  …  <  1.0.1
+```
+
+semver 的序是**稠密**的 —— 任意两个版本之间都能再插进一个，而整数之间只能放有限个。
+所以**不存在保序的整数编码**：`0.2.0-rc.2 → 20002` 这类方案必然在 `0.2.0` 正式版上翻车
+（final 必须大于所有 rc，却没有可用的整数）。计数法不承诺顺序，只承诺"变没变" —— 这才是这一位能承担的全部。
 
 **三处分工（避免混淆）**：
 
 | 位置 | 放什么 | 例 |
 |---|---|---|
-| `version` 第 4 位 | 内置基线的烘焙序号（`1` = DSH `0.2.0-rc.2`） | `1`（→ `1.0.0.1`） |
-| `manifest.json` 的 `baked` / `floor` | **完整 semver**（含 `-rc.N`），权威值 | `0.2.0-rc.2` |
+| `version` 第 4 位 | 烘焙台账的 `seq`（`1` = 第 1 次烘焙） | `1`（→ `1.0.0.1`） |
+| `manifest.json` 的 `baked` / `floor` | **完整 semver**，权威值；`baked` 与 `floor` 是两件事 | `0.2.0-rc.2` / `0.2.0-rc.2` |
 | `versionCode` | 变更次数（第几次发布），单调 +1；与上面两行**无推导关系** | `1` |
 
 ---
@@ -73,7 +88,7 @@ managedFeatures=<管理特性，逗号分隔，Root 管理器标签>   ← 语�
 **`versionCode` = 这个模块"变更了多少次"的计数**，只面向 Root 管理器；每对外发一次新包就 +1。
 
 - 它**不从 `version` 推导**，也**不与 `version` 的各位联动** —— 两者是两个独立维度：
-  - `version` → **给人看**，表达结构上的变化（大版本 / 功能变更新增 / 补丁 / 内置 DSH 版本号）；
+  - `version` → **给人看**，表达结构上的变化（大版本 / 功能变更新增 / 补丁 / 烘焙序号）；
   - `versionCode` → **给 Root 管理器看**，只表达"这是第几次变更"。
 - 所以：一次纯修复（`version` 可能只动补丁位）与一次大改（动大版本），在 `versionCode` 上都**只是 +1**。
 
@@ -117,16 +132,18 @@ managedFeatures=<管理特性，逗号分隔，Root 管理器标签>   ← 语�
 
 版本号会同时出现在 **三个地方**：`module.prop`、`manifest.json`、APK。三处手改必然漂移。
 
-**规定**：只维护一个真源文件 `tools/version.env`，其余全部由脚本生成。**已实现**：
+**规定**：三个真源各管一件事，其余全部由脚本生成。**已实现**（[ADR-025](./decisions.md)）：
 
 | 文件 | 角色 |
 |---|---|
-| [tools/version.env](../tools/version.env) | **唯一手改的版本文件**（模块身份 + 四位 version + versionCode + DSH 基线） |
+| [tools/version.env](../tools/version.env) | **手改**：模块身份 + version 前三段 + `versionCode` |
+| [baseline/dsh.env](../baseline/dsh.env) | **手改**：`DSH_FLOOR` / `DSH_RECOMMENDED` / `NODE_FLOOR` |
+| [baseline/bake-ledger.json](../baseline/bake-ledger.json) | **手改，只追加**：烘焙台账，`seq` ↔ `baked`；第 4 位与 `manifest.baked` 的唯一来源（§10） |
 | [tools/gen-version.py](../tools/gen-version.py) | 生成器（纯标准库） |
 | `build/module.prop` | 生成物 |
 | `build/manifest.json` | 生成物（从 [baseline/manifest.example.json](../baseline/manifest.example.json) 模板合并） |
 | `build/apk-version.properties` | 生成物（给 APK 构建读 `VERSION_CODE` / `VERSION_NAME`） |
-| [update.json](../update.json) | **手写但与真源强校验**（提交在仓库根：Root 管理器从这里检查更新；`version` / `versionCode` 必须与 `version.env` 一致） |
+| [update.json](../update.json) | **手写但与真源强校验**（提交在仓库根：Root 管理器从这里检查更新；`version` / `versionCode` 必须与生成结果一致） |
 
 ```bash
 python3 tools/gen-version.py --draft    # 生成到 build/（草稿：payload 的层 sha256 还没真值时必须带）
@@ -134,14 +151,15 @@ python3 tools/gen-version.py            # release 模式：任何占位都报错
 python3 tools/gen-version.py --check    # 只校验生成物是否与真源同步（CI / 提交前用；可带 --draft）
 ```
 
-**五条硬性行为**（已实测）：
+**七条硬性行为**（已实测；[tools/test-versioning.py](../tools/test-versioning.py) 用 20 条断言守着）：
 
 1. **占位就报错退出**（exit 2），**绝不替你编造**版本号或名字；
 2. **占位检查是全文的**，不只看字段开头 —— `<账号>` 这种藏在 URL 中间的值、模板里的 `sha256:REPLACE_ME`、`待定` / `TBD` 都算（上一版只看 `startswith("<")`，会漏放 `UPDATE_JSON`）；
 3. `floor ≤ baked`、`recommended > baked` 由**真的 prerelease 感知比较**校验（§9），不是字符串比大小；
 4. `DSH_RECOMMENDED` 为空时**删除** `recommended` 键，不继承模板里遗留的旧值（上一版会让模板的幽灵版本 `0.2.1-rc.3` 原样进产物）；
-5. `--check` 在生成物与真源不一致时报**漂移**并 exit 1（例如有人手改了 `build/module.prop`）；
-6. **`update.json` 与真源强校验** —— 它的 `version` / `versionCode` 必须等于生成结果，缺文件或不同步直接 exit 2（否则更新按钮会指向错的包）。
+5. **第 4 位与 `baked` 从台账派生** —— `seq` 必须从 1 连续递增（跳号 / 从 0 开始直接 exit 2），`baked` 必须是合法 semver；`version.env` 里残留 `V_DSH` / `DSH_BAKED` / 基线参数也直接 exit 2（迁移必须彻底，不许静默忽略）；
+6. `--check` 在生成物与真源不一致时报**漂移**并 exit 1（例如有人手改了 `build/module.prop`）；
+7. **`update.json` 与真源强校验** —— 它的 `version` / `versionCode` 必须等于生成结果，缺文件或不同步直接 exit 2（否则更新按钮会指向错的包）。
 
 APK 侧接入方式（二选一）：
 
@@ -159,15 +177,16 @@ APK 侧接入方式（二选一）：
 | `versionCode`（内部版本码） | **= 模块 `versionCode`**，同步 +1 | Android 要求单调递增且为 32 位内整数；**不能超过 2100000000** |
 | `versionName`（外部版本号） | **= 模块 `version`**，同四位结构 | 纯展示，不参与比较 |
 
-> 这样做的收益：**管理器里看到的模块版本、APK 的版本、以及闸门里的 floor，永远同步**，不会出现"APK 更新了但模块没更新"这类错位。
+> 这样做的收益：**管理器里看到的模块版本、APK 的版本、以及闸门里的 `baked`，永远指向同一次烘焙**（第 4 位 = 台账 seq），不会出现"APK 更新了但模块没更新"这类错位；`floor` 另有来源，不受第 4 位影响。
 
 ---
 
 ## 7. 一份可直接复制的初值
 
-见 [tools/version.env](../tools/version.env)（真源）与 [baseline/module.prop.example](../baseline/module.prop.example)（生成后的样子）。
+三个真源：[tools/version.env](../tools/version.env) · [baseline/dsh.env](../baseline/dsh.env) · [baseline/bake-ledger.json](../baseline/bake-ledger.json)。
+生成后的样子见 [baseline/module.prop.example](../baseline/module.prop.example)。
 
-~~当前仍是占位的三项~~ → **三项已于 2026-10-17 定稿**：`MODULE_ID=Zodiac-Quill-Saga` · `MODULE_NAME=DSH Chroot` · `V_DSH=1`。
+**2026-10-17 定稿的三项**：`MODULE_ID=Zodiac-Quill-Saga` · `MODULE_NAME=DSH Chroot` · 首个烘焙 `seq=1` / `baked=0.2.0-rc.2`（记在台账里，不写在 version.env）。
 现在唯一还空着的是 payload 层的 `sha256`（必须真打过包才有），所以生成走 `--draft`；其余任何占位都会被生成器拒绝。
 
 ---
@@ -248,3 +267,66 @@ python3 tools/semver.py           # 只跑 Python 实现
 python3 tools/build-device-selftest.py           # 改完 lib 或 spec 后重新生成（CI 会校验没漂移）
 python3 tools/build-device-selftest.py --check
 ```
+
+---
+
+## 10. 烘焙台账（`baseline/bake-ledger.json`）
+
+台账是第 4 位与 `baked` 的**唯一来源**。它只增不改：一条记录 = 一次烘焙。
+
+```json
+{
+  "schema": 1,
+  "bakes": [
+    { "seq": 1, "baked": "0.2.0-rc.2", "date": "2026-10-17", "note": "首个基线" }
+  ]
+}
+```
+
+| 字段 | 规则 |
+|---|---|
+| `seq` | 整数，**必须从 1 连续递增**（第 n 条的 `seq` 必须等于 n）；跳号 / 从 0 开始直接 exit 2 |
+| `baked` | 合法 semver（§9 的实现校验）；最后一条就是 `manifest.baked` |
+| `date` | 可选，`YYYY-MM-DD` |
+| `note` | 可选，一句人话：为什么烘这一次 |
+
+**加一条账**（换 DSH 基线时）：
+
+```bash
+# 编辑 baseline/bake-ledger.json，在 bakes 末尾追加：
+#   { "seq": 2, "baked": "0.2.1-rc.2", "date": "2026-10-20", "note": "上游 rc 修了 X" }
+python3 tools/gen-version.py --draft     # version 第 4 位自动变成 2 → 1.0.0.2
+```
+
+**回滚也记一条账**：把一份更旧的 DSH 重新烘进 payload 同样是一次烘焙 —— `seq` 继续 +1，`baked` 写回旧版本。
+生成器对这种**非升序**或**重复**的 `baked` **只告警、不拒绝** —— 回滚是合法动作，告警只是提醒你别把顺序写错。
+
+**同一 baked 重新打包不记账**：字节变了但 DSH 版本没变（重打层 / 改 wrapper / 换压缩参数）走第 3 位补丁。
+这样"第 4 位变了 = DSH 换了"才永远成立（§11）。
+
+---
+
+## 11. 变更决策表（改哪一位）
+
+| 变更 | 1 大 | 2 功能 | 3 补丁 | 4 台账 | versionCode | 台账加行 |
+|---|---|---|---|---|---|---|
+| 修壳 / 容器 bug，DSH 不变 | | | +1 | 不变 | +1 | — |
+| 模块新增功能 | | +1 | 0 | 不变 | +1 | — |
+| 换 DSH 基线（如 `0.2.0-rc.2 → 0.2.1-rc.2`） | | | 0 | +1 | +1 | **+1 行** |
+| 同一 baked 重打层（哈希变了） | | | +1 | 不变 | +1 | — |
+| 只抬 `floor`（不放新 DSH） | | | +1 | 不变 | +1 | — |
+| 破坏性变更（安装路径 / 布局） | +1 | 0 | 0 | 不变 | +1 | — |
+
+两条判据：
+
+- **跟不跟新的 RC**：除 ADR-022 的"只追 RC"外，还要满足**安全修复 / 我需要的新 API / 上游 RC 已稳定**三条之一。第 4 位只增不减，跟得越勤越没余量。
+- **抬不抬 floor**：只有**需要把用户从旧版本赶走**时（旧版有已知缺陷）才抬；否则保持低 floor，允许用户自行回滚。
+
+---
+
+## 12. 一条禁令：`version` 永不参与比较
+
+- 模块更新的**唯一**排序键是整数 `versionCode`（`update.json` 用它，生成器校验的是**相等**）。
+- `version`（四位）只给人看、给 `--check` 做**相等**比对；任何"谁更大"的判断都不许落在它上面。
+- 原因很具体：`1.0.0.10` 在字典序上**小于** `1.0.0.9` —— 第 10 次发版就会翻车。
+- DSH 版本之间的"谁更新"只走 §9 的 semver 闸门（三份实现 + 76 条向量）。

@@ -1,0 +1,14 @@
+{
+  "_note": "烘焙台账（ADR-025）：只追加，不许改旧条目、不许删条目。seq 从 1 连续递增；最后一条的 seq 就是 version 第 4 位，最后一条的 baked 就是 manifest.baked。",
+  "_how_to_add": "换 DSH 基线时在 bakes 末尾追加一条 {seq, baked, date, note}，seq = 上一条 + 1；同一 baked 重新打包不要记账（改抬补丁位，见 docs/versioning.md §11）。",
+  "_rollback": "回滚（烘焙一份更旧的 DSH）也记一条新账，seq 继续 +1；生成器对非升序 / 重复的 baked 只告警不拒绝。",
+  "schema": 1,
+  "bakes": [
+    {
+      "seq": 1,
+      "baked": "0.2.0-rc.2",
+      "date": "2026-10-17",
+      "note": "首个基线：DSHA 内跑的就是它（APP_VERSION=dsh0.2.0-rc.2）"
+    }
+  ]
+}

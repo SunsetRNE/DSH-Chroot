@@ -53,7 +53,7 @@
 |---|---|
 | `id` | `Zodiac-Quill-Saga` |
 | `name` | `DSH Chroot` |
-| `version` | `1.0.0.1`（第 4 位 = 内置 DSH 基线的烘焙序号，`1` = DSH `0.2.0-rc.2`） |
+| `version` | `1.0.0.1`（第 4 位 = 烘焙台账序号，`1` = 第 1 次烘焙 = DSH `0.2.0-rc.2`；见 [versioning §2](docs/versioning.md)） |
 
 为什么 id 与仓库名不一样 → [docs/versioning.md §8](docs/versioning.md)（"越少人看见的字段，越可以讲风格"）。
 
@@ -63,7 +63,7 @@
 |---|---|
 | [docs/guide.md](docs/guide.md) | **内部项目指引**：进度 / 决定速查 / 待办（想快速看懂全貌从这里进） |
 | [docs/research.md](docs/research.md) | 架构与路线研究：目标、盘点、路线比较、端口与通信 |
-| [docs/decisions.md](docs/decisions.md) | **ADR-001 ~ ADR-024**：24 条独立决策 + 代价 + 重审触发 |
+| [docs/decisions.md](docs/decisions.md) | **ADR-001 ~ ADR-025**：25 条独立决策 + 代价 + 重审触发 |
 | [docs/threat-model.md](docs/threat-model.md) | 威胁模型，含 §5「不设防声明」 |
 | [docs/baseline.md](docs/baseline.md) | 基线定义：Ubuntu 24.04 / Node 24 / pnpm 11.x / DSH 基线 |
 | [docs/versioning.md](docs/versioning.md) | 版本号、`module.prop`、命名分工、semver 闸门 |
@@ -73,8 +73,9 @@
 不需要任何依赖（只要 python3 与 node）：
 
 ```bash
-python3 tools/check-gate.py            # 三份实现 × 一张向量表（版本比较写错是静默错误，这里不靠自觉）
-python3 tools/gen-version.py --draft   # 从 tools/version.env 生成 build/（发布前去掉 --draft，占位会直接报错）
+python3 tools/check-gate.py             # 三份实现 × 一张向量表（版本比较写错是静默错误，这里不靠自觉）
+python3 tools/test-versioning.py        # 版本真源契约：台账派生 / 拒绝类断言 / 漂移检测
+python3 tools/gen-version.py --draft    # 从三个真源生成 build/（发布前去掉 --draft，占位会直接报错）
 ```
 
 需要说明的一点：版本比较是本项目**唯一写错会静默出错**的地方 —— `"0.2.1-rc.1" < "0.2.0-rc.2"` 在字典序上成立，

@@ -34,6 +34,10 @@ jobs:
           python3 tools/gen-version.py --draft
           python3 tools/gen-version.py --check --draft
 
+      # 版本真源契约：台账是第 4 位与 baked 的唯一来源（ADR-025）
+      - name: 版本真源契约（台账 / 拒绝类断言）
+        run: python3 tools/test-versioning.py
+
       # 真机自检脚本必须由 lib + spec 生成，不许手改
       - name: 设备自检脚本与源保持一致
         run: python3 tools/build-device-selftest.py --check

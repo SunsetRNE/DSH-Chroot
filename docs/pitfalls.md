@@ -108,6 +108,14 @@
 - **正确做法**：切字段用 `IFS='|'; set -- $x`（三端一致），或 `while IFS= read`；**带引号的变量**模式是安全的（`${line%%"$_tab"*}` 三端都正常，`lib/semver-gate.sh` 的 `batch` 就是这么写的）。凡是要在设备上跑的 sh 代码，**先在本机装个 mksh 跑一遍**（`apt-get install mksh`）。
 - **配套**：`tools/check-gate.py` 现在会**自动把 mksh 纳入**（装了就跑），CI 也装 mksh 跑一遍；真机自检脚本 `tools/verify-gate-device.sh` 就是这次踩坑的产物。
 
+### A21. 把 DSH 版本号"编"进 module.prop 的第 4 位（或让一位同时对齐 floor 和 baked）
+- **症状**：想让四位 `version` 直接表达"内置的是哪个 DSH 版本"，于是设计一套 `主×10000+次×100+修订` 的编码，或者干脆让第 4 位"既跟 floor 又跟 baked"。
+- **为什么错**：三条，都是硬错。
+  1. **不存在保序的整数编码**：semver 的序是**稠密**的（`1.0.0 < 1.0.1-0 < 1.0.1-0.0 < … < 1.0.1`，任意两个版本间都能再插一个），而整数之间只能放有限个。`0.2.0-rc.2 → 20002` 这类方案必然在 `0.2.0` 正式版上翻车（final 必须大于所有 rc，却没有可用的整数）。
+  2. **一位不能同时等于两个值**：`floor`（允许的最低）与 `baked`（内置的那份）**本来就允许不同**（[baseline §7](./baseline.md)：floor 是否跟着抬由你决定）。今天同值只是巧合，第一次"只抬 floor"或"只换 baked"就必须二选一。
+  3. **人肉同步不会报错**：`V_DSH` 当年只被校验"是不是整数"，与 `DSH_BAKED` 的对应关系没有任何机器检查 —— 写错会静默进产物。
+- **正确做法**（[ADR-025](./decisions.md)）：第 4 位 = **只追加台账**（[baseline/bake-ledger.json](../baseline/bake-ledger.json)）的 `seq`，**对着 `baked`**；`baked` / `floor` 各自以完整 semver 放在 manifest；`version` **永不参与任何比较**（模块更新只认整数 `versionCode`）。注意 `1.0.0.10` 在字典序上小于 `1.0.0.9` —— 第 10 次发版就会翻车。
+
 ---
 
 # B. 进阶（Advance）——每一条都写了"触发条件"

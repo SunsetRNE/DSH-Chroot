@@ -49,17 +49,18 @@ def die(msg):
     sys.exit(2)
 
 
-def read_env(path=None):
-    path = path or os.path.join(ROOT, "tools", "version.env")
-    env = {}
+def ledger_baked(path=None):
+    """dsh 层的默认 baked：烘焙台账（baseline/bake-ledger.json）的最后一条。
+
+    与 tools/gen-version.py 同一个来源 —— 构建器与生成器不许各自有一份 baked（ADR-025）。
+    """
+    path = path or os.path.join(ROOT, "baseline", "bake-ledger.json")
     with open(path, encoding="utf-8") as fh:
-        for line in fh:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, v = line.split("=", 1)
-            env[k.strip()] = v.strip()
-    return env
+        data = json.load(fh)
+    bakes = data.get("bakes") or []
+    if not bakes:
+        return None
+    return bakes[-1].get("baked")
 
 
 def sha256_of(path):
@@ -243,15 +244,15 @@ def main(argv):
     if not args.kind or not args.stage:
         die("需要 --kind 与 --stage（或 --selftest / --verify）")
 
-    env = read_env()
     if args.kind == "node":
         version = args.version or "24.19.0"
     else:
-        version = args.baked or env.get("DSH_BAKED")
+        baked = ledger_baked()
+        version = args.baked or baked
         if not version:
-            die("dsh 层需要 --baked，或 version.env 的 DSH_BAKED")
-        if env.get("DSH_BAKED") and args.baked and args.baked != env["DSH_BAKED"]:
-            die("--baked(%s) 与 version.env 的 DSH_BAKED(%s) 不一致" % (args.baked, env["DSH_BAKED"]))
+            die("dsh 层需要 --baked，或 baseline/bake-ledger.json 的最后一条")
+        if baked and args.baked and args.baked != baked:
+            die("--baked(%s) 与烘焙台账最后一条的 baked(%s) 不一致" % (args.baked, baked))
 
     tar_path, manifest_path, digest, size = build(args.kind, args.stage, args.out,
                                                   version, args.epoch, args.pnpm)

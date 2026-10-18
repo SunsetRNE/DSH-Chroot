@@ -37,10 +37,18 @@
   - ADR-019 补实测限定：KSU 的 `su -c` 起手就在 `/apps`，搬家只对 App 内启动有意义
   - threat-model §6.2 修正：chroot-distro 的 `android-bind` 默认 enable，`/sdcard` 暴露面会自己回来（不是"默认没有"）
   - research §9.1 devpts 措辞修正（宿主 vs 容器是两回事）；设备模块数 9 → 10
-- 设计文档：ADR-001 ~ ADR-024 全部拍板；威胁模型含「不设防声明」
+- 设计文档：ADR-001 ~ ADR-025 全部拍板；威胁模型含「不设防声明」
 - **ADR-024（payload 交付形态与首启自举）**：模块 zip 永不装 payload（只装 < 1 MB 的引导器）；
   首启由壳触发/执行/监督：离线 inbox 优先 → 否则 busybox wget 下载 → 校验 → staging 解压 → 原子切指针；
   修订 ADR-013 的"离线"条款；三条硬约束（无 curl / 解压前查空间 / 纯 POSIX sh）
+- **版本号分层（ADR-025，2026-10-18）**：第 4 位改成**烘焙台账序号**，对着 `baked` 而不是 `floor`
+  - 新增 [baseline/bake-ledger.json](baseline/bake-ledger.json)（只追加：`seq` ↔ `baked`，第 4 位与 `manifest.baked` 的唯一来源）
+    与 [baseline/dsh.env](baseline/dsh.env)（`floor` / `recommended` / `node_floor`）
+  - `tools/version.env` 删除 `V_DSH` / `DSH_BAKED`；残留会被生成器 exit 2 拒绝（迁移不许静默忽略）
+  - 生成器从台账派生第 4 位与 `baked`，新增校验：`seq` 连续、semver 合法；回滚 / 重复只告警
+  - 新增 [tools/test-versioning.py](tools/test-versioning.py)（20 条断言，含"故意写坏必须拒绝"）并接进 CI
+  - 明文规则：`version` **永不参与比较**；模块更新只认整数 `versionCode`
+  - 文档同步：versioning §2/§5/§10-§12、ADR-010 修订注记、baseline §4/§7、payload §3/§6、pitfalls A21
 
 > 尚无模块包。此版本将随首个 Release 发布。
 

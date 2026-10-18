@@ -91,12 +91,16 @@
 
 | 字段 | 含义 | 谁写 | 变化时机 |
 |---|---|---|---|
-| `baked` | 烘焙进 payload 的 DSH 版本 | 模块 | 刷模块 / 换 payload |
-| `floor` | **硬下限**：低于它就拒绝运行/安装 | 模块 | 刷模块 |
-| `recommended` | 软提示，不拦 | 模块 | 刷模块 |
-| `node_floor` | Node 最低版本 | 模块 | 刷模块 |
-| `layers` | 各层的 sha256，用于启动校验 | 模块 | 刷模块 |
+| `baked` | 烘焙进 payload 的 DSH 版本（烘焙台账最后一条） | 生成器 | 台账记一行换基线 |
+| `baked_seq` | 第几次烘焙（= `version` 第 4 位） | 生成器 | 台账记一行换基线 |
+| `floor` | **硬下限**：低于它就拒绝运行/安装；与 `baked` **不必相等** | 生成器（源：`baseline/dsh.env`） | 抬下限（与第 4 位无关） |
+| `recommended` | 软提示，不拦 | 生成器（源：`baseline/dsh.env`） | 想推荐时 |
+| `node_floor` | Node 最低版本 | 生成器（源：`baseline/dsh.env`） | 换 Node 时 |
+| `layers` | 各层的 sha256，用于启动校验 | 构建器 + 生成器 | 重打 payload |
 | `state_version` | 状态目录结构版本（**禁止版本层触碰**） | 壳 | 结构变更时 |
+
+> `baked` / `baked_seq` 与 `floor` 分属两个来源（[bake-ledger](../baseline/bake-ledger.json) / [dsh.env](../baseline/dsh.env)），
+> 这是 [ADR-025](./decisions.md) 的核心：**第 4 位只跟 `baked`**，`floor` 不进版本号。
 
 **不放进 manifest 的东西**：用户当前选择的版本（在 `active` 指针里）、端口（在 `run/`）、凭据（在 `state/`）。
 
@@ -104,13 +108,14 @@
 
 ## 5. payload 规范（离线烘焙包）
 
+两层、四个文件（完整规范见 [payload.md](./payload.md)）：
+
 ```
-dsh-payload-<baked>-<arch>.tar.zst
-└── base/
-    ├── node/                 # node 24 + npm + pnpm（官方二进制）
-    └── dsh-<baked>/          # npm i -g @deepseek-ai/dsh@<baked> --prefix 后的完整树
-└── payload.json              # {baked, node, pnpm, sha256:{...}}
+node-<ver>.tar.gz   + node.json     # node + npm + pnpm（官方二进制）
+dsh-<baked>.tar.gz  + dsh.json      # @deepseek-ai/dsh 完整树 + bin wrapper
 ```
+
+`baked` 的默认值取自 [bake-ledger.json](../baseline/bake-ledger.json) 的最后一条（ADR-025）；压缩用 gzip（ADR-013 决定 C，⛔ 不用 zstd）。
 
 **分发三件套**（体积差 3 个数量级，别混在一起）：
 
@@ -141,7 +146,9 @@ dsh-payload-<baked>-<arch>.tar.zst
 
 ## 7. 基线变更纪律
 
-- **升级 baked**：换 payload + 抬 versionCode；**floor 是否跟着抬由你决定**（抬 floor 会自动停用低于它的用户层）
+- **升级 baked**：在 [baseline/bake-ledger.json](../baseline/bake-ledger.json) 末尾追加一行（`seq` +1）→ `version` 第 4 位与 `manifest.baked` 自动更新；然后再打 payload。**不记账，生成器就拒绝**（ADR-025）
+- **floor 与 baked 是两件事**：**floor 是否跟着抬由你决定**（抬 floor 会自动停用低于它的用户层），它**不改变** `version` 第 4 位
+- **同一 baked 重打 payload**（只改了 wrapper / 压缩参数）：不记账，抬 `version` 第 3 位
 - **升级 Node**：必须重跑 `node-pty` 验证（原生模块 ABI 敏感）
 - **升级 pnpm**：低风险，但记得 pnpm store 版本兼容性
 - **任何时候不要**把 `state/` 内容打进 payload

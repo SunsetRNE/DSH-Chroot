@@ -1,6 +1,6 @@
 # DSH 容器化替代 DSHA —— 项目指引
 
-> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交）。
+> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层落地，ADR-025）。
 > 阶段二（自定义内核 / Droidspaces）已按你的决定裁掉，仅在 `docs/pitfalls.md` 里留作"进阶与触发条件"。
 > 本文档集是给"未来的你"看的：过一段时间回来，只读本文件就能恢复全部上下文。
 
@@ -12,13 +12,14 @@
 
 | 项 | 状态 |
 |---|---|
-| 设计决策 **ADR-001 ~ ADR-024** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
-| **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot` · `V_DSH=1`（命名分工见 [versioning §8](./versioning.md)） |
+| 设计决策 **ADR-001 ~ ADR-025** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
+| **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot`；版本真源拆三份（2026-10-18 → ADR-025）：`tools/version.env` / `baseline/dsh.env` / `baseline/bake-ledger.json`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
 | **命门：容器内 PTY** | ✅ **完全闭环**（2026-10-18）：proot 实测（§9.1）+ **真 chroot 复验**（§9.1.1，chroot-distro 2.1.0 + ubuntu noble，`/dev/pts/0`） |
 | **壳骨架**（service.sh + dsh-ctl） | ✅ 2026-10-18：六条契约 + 退出码 + 两层 bootstrap（Node 层复用）· 契约测试 32 + 11 条，dash/mksh 双端与 CI 全绿 |
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
+| **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
@@ -60,7 +61,7 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 3 | [docs/research.md](./research.md) | **研究文档**：目标、现状盘点、路线比较、架构、版本策略、端口/通信、缺口、未验证项 |
 | 4 | [docs/baseline.md](./baseline.md) | **基线**：Ubuntu 24.04 + Node 24 + **pnpm 11.x** + DSH 基线，含 libc 依赖审计与 manifest 规范 |
 | 5 | [docs/projects.md](./projects.md) | **涉及项目清单**：用/不用/备选，各自的角色与风险 |
-| 6 | [docs/pitfalls.md](./pitfalls.md) | **反例集**：会绕远路的做法（19 条）+ 值得进阶的方向（10 条） |
+| 6 | [docs/pitfalls.md](./pitfalls.md) | **反例集**：会绕远路的做法（21 条）+ 值得进阶的方向（10 条） |
 | 7 | [docs/decisions.md](./decisions.md) | **决策记录（ADR）**：已拍板的事 + 代价 + 重审触发 |
 | 8 | [docs/threat-model.md](./threat-model.md) | **威胁模型（归拢）**：资产 / 对手 / 六条边界 / 威胁↔ADR 对账 / **不设防声明** / 开着的口子 |
 | 9 | [docs/recovery.md](./recovery.md) | **刷机前的证据与回滚预案**（ARB 警告 / 包形态 / 抽分区 / 决策树） |
@@ -70,10 +71,10 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 
 ---
 
-## 3. 决策地图（**是 24 条独立决策，不是排列组合**）
+## 3. 决策地图（**是 25 条独立决策，不是排列组合**）
 
 ```
-整个方案 = 24 条互不相关的决策，每条单独选（⑧a 是 ⑧ 的附属）
+整个方案 = 25 条互不相关的决策，每条单独选（⑧a 是 ⑧ 的附属）
 
 L0 内核     ① 阶段一不碰内核（原厂 6.1.141 + LKM）........ ✅ ADR-001
 L1 运行时   ② 容器用 chroot-distro 模块 ................. ✅ ADR-001
@@ -91,7 +92,8 @@ L3 壳       ⑥ 壳不做 Hook；能力做成可插拔插件 ........... ✅ AD
             ⑳ 核心插件：独立发布 / 内部钉死（内外分层） ✅ ADR-020（钉四样；origin 标识；收口清单是必需品）
             ⑯ 挂载布局 + MT 管理器接入（fix-owner 随运行时） ✅ ADR-016（root≠root；两段式公开面；inbox 投递）
             ⑲ 公开入口 dsh-ctl + 进程归属（cgroup 搬家在最外层） ✅ ADR-019（三层结构；四条验收判据；入口须避开 bind 子树）
-            ⑩ 版本号与 module.prop 规范 .............. ✅ ADR-010（四位 version，第 4 位=内置 DSH 版本映射值；单一真源）
+            ⑩ 版本号与 module.prop 规范 .............. ✅ ADR-010（四位 version；单一真源）
+            ㉕ 第 4 位 = 烘焙台账序号，对着 baked ...... ✅ ADR-025（台账只追加；floor 不进版本号；version 永不参与比较）
 L4 信任     ⑪ 内置 Node/pnpm；AI 写插件的约束落在 DSH 之外  ✅ ADR-011（四层约束 + 试衣间/人闸门；approval 是"声明式"的）
             ⑫ 保留上游在线面 + 壳自己做带外面（DSH 死了也能关插件） ✅ ADR-012（在线面=ui-plugin-manager；带外=改 patch / dsh plugin / 重建；共用一份真相；L3=换指针+恢复四份文件）
             ⑬ 重建入口 = service.sh（四入口同一份代码）+ dsh-ctl 多动词 ✅ ADR-013（纯 POSIX sh；⛔ 禁 zstd；显式 chown/chcon）
@@ -99,11 +101,11 @@ L4 信任     ⑪ 内置 Node/pnpm；AI 写插件的约束落在 DSH 之外  ✅
 L5 可观测   ⑭ 四类日志分开；壳是唯一落盘点；两条反馈面 ✅ ADR-014（⛔ 凭证不进日志；诊断包白名单打包；遥测默认保持）
             ⑮ 只走模块仓库发布；不推送上游更新 ✅ ADR-015（模块更新发；基线抬升随模块；自动升级不做；status 显示基线偏离；手机端 UI = 内置第三方插件 dsh-web-mobile v3.0.5）
 L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017（卸载即清空模块域、用户空间永久保留；更新走 update 标记不经 uninstall；先停后卸）
-            ㉔ payload 交付：zip 永不装 payload，壳负责首启自举 ✅ ADR-024（离线优先 · busybox wget · staging+原子切指针 · 修订 ADR-013 的"离线"条款）
+            ㉔ payload 交付：zip 永不装 payload，壳负责首启自举 ✅ ADR-024（离线优先 · curl 下载 · staging+原子切指针 · 修订 ADR-013 的"离线"条款）
 ```
 
 > ⚠️ 常见误解：以为上面的选项会两两组合出"很多套方案"。**不会** —— 每条轴独立选。
-> **截至 ADR-024，设计层全部拍板，没有待定项**（ADR-001 ~ ADR-024）。
+> **截至 ADR-025，设计层全部拍板，没有待定项**（ADR-001 ~ ADR-025）。
 
 ### 3.1 文件通道这条轴的真实结构（为什么说它不是"二选一"）
 
@@ -205,8 +207,8 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── research.md                 # 研究文档（目标 / 盘点 / 架构 / 策略 / 未验证项）
 │   ├── baseline.md                 # 基线定义 + libc 依赖审计 + manifest 规范
 │   ├── projects.md                 # 涉及项目清单（用 / 不用 / 备选）
-│   ├── pitfalls.md                 # 反例集：弯路 19 条 + 进阶 10 条（A20 = mksh 的 `${s%%|*}` 坑）
-│   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-024
+│   ├── pitfalls.md                 # 反例集：弯路 21 条 + 进阶 10 条（A20 = mksh 方言坑；A21 = 把 semver 编进第 4 位）
+│   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-025
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）
 │   ├── versioning.md               # 版本号与 module.prop 规范
@@ -217,16 +219,19 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── semver-gate.sh              # 闸门的 POSIX sh 实现（设备侧 / 容器内）
 │   └── semver-gate.mjs             # 闸门的 Node 实现（容器内 / 壳）
 ├── baseline/
+│   ├── dsh.env                     # ★ DSH 基线参数（floor / recommended / node_floor）
+│   ├── bake-ledger.json            # ★ 烘焙台账（只追加）：seq <-> baked；第 4 位与 manifest.baked 的唯一来源
 │   ├── manifest.example.json       # 版本闸门 manifest 模板（生成器的输入）
 │   └── module.prop.example         # module.prop 生成后的样子
 └── tools/
-    ├── version.env                 # ★ 唯一手改的版本真源（身份 + 四位 version + DSH 基线）
-    ├── gen-version.py              # 由真源生成 module.prop / manifest.json / APK 版本字段（fail-closed）
+    ├── version.env                 # ★ 模块身份 + version 前三位 + versionCode（不写 DSH 版本）
+    ├── gen-version.py              # 由三个真源生成 module.prop / manifest.json / APK 版本字段（fail-closed）
+    ├── test-versioning.py          # 版本真源契约测试（派生 / 拒绝类 / 回滚告警 / 漂移）
     ├── semver.py                   # 权威 semver 比较（Python 参考实现）
     ├── check-gate.py               # 三份实现 × 一张表：防漂移检查（CI 入口）
     ├── test-service.sh             # 壳的契约测试（幂等 / 环境钉死 / 先停后换 / 退出码）
     ├── test-dsh-ctl.sh             # 入口的契约测试（参数校验 / 审计 / 透传 / cgroup 如实报告）
-    └── build-payload.py            # payload 打包器（确定性 tar.gz + payload.json + 校验 + 自测）
+    ├── build-payload.py            # payload 打包器（确定性 tar.gz + payload.json + 校验 + 自测）
     ├── verify-pty.sh               # 容器内 PTY 可用性验证（双通道）
     └── compare-firmware.py         # 两份固件包内核侧镜像比对
 ```

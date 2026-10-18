@@ -46,7 +46,7 @@ dsh-<baked>.tar.gz     + dsh.json
 |---|---|---|
 | `schema` | `1` | |
 | `layer` | `dsh` | |
-| `baked` | `0.2.0-rc.2` | 必须与 `manifest.baked` 一致 |
+| `baked` | `0.2.0-rc.2` | 必须与 `manifest.baked` 一致（两者都取自烘焙台账最后一条） |
 | `distro` | `{ubuntu,noble,24.04,glibc}` | 层是按哪个发行版烘焙的 |
 | `sha256` / `size` | … | 仅旁挂清单有 |
 
@@ -83,7 +83,7 @@ python3 tools/build-payload.py --selftest        # 两层各自：确定性 + �
 
 | 位置 | 谁写 | 谁读 |
 |---|---|---|
-| `tools/version.env` 的 `DSH_BAKED` | 人 | 构建器（dsh 层 `baked`）、生成器（`manifest.baked`） |
+| `baseline/bake-ledger.json` 的最后一条 `baked` | 人（只追加） | 构建器（dsh 层 `baked` 的默认值）、生成器（`manifest.baked` / `baked_seq` / `version` 第 4 位） |
 | `build/{node,dsh}-*.tar.gz` + `{node,dsh}.json` | `tools/build-payload.py` | 发布 / 投递 |
 | `/data/local/dsh/inbox/` | `dsh-ctl install` 或用户投递 | `service.sh bootstrap` |
 | `/data/local/dsh/base/node/` · `base/dsh-<baked>/` | `service.sh bootstrap` | runtime adapter（bind 进容器） |

@@ -128,7 +128,7 @@ L0  内核（可被 OTA 覆盖）← 原厂 + LKM 就能跑阶段一
 ├── user/                      # 用户升级层
 │   └── dsh-<ver>/
 ├── active                     # 壳维护的原子指针（一行路径：写 tmp + os.replace）
-├── manifest.json              # baked / floor / recommended / node_floor / sha256
+├── manifest.json              # baked / baked_seq / floor / recommended / node_floor / sha256
 └── run/                       # 端口 JSON、UDS、日志
 ```
 

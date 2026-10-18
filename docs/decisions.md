@@ -118,16 +118,21 @@
 
 - **背景**：使用者给出模块版本规范（四位 `version` + 单调 `versionCode` + APK 对齐）。
 - **决定**：采纳，并把细则写进 [docs/versioning.md](./versioning.md)：
-  1. `version` = `<大版本>.<功能变更新增>.<补丁>.<DSH内置版本号>`，第 4 位与 manifest 的 `floor` **对齐**；
+  1. `version` = `<大版本>.<功能变更新增>.<补丁>.<DSH内置版本号>`，第 4 位与 manifest 的 `floor` **对齐**；（⛔ 已由 ADR-025 修订）
   2. `versionCode` = **变更了多少次**（面向 Root 管理器的计数），单调 +1；**不从 `version` 推导、不与它联动**（两者是独立维度：`version` 给人看，`versionCode` 给管理器看）；
   3. APK：`versionCode` 对齐模块 `versionCode`，`versionName` 对齐 `version` 结构；
   4. **单一真源** `version.env`，`module.prop` / `manifest.json` / APK 三处全部由它生成，禁止手改；
   5. `managedFeatures`：**有真实实现才声明**，且必须与模块 config 的 `manage.<feature>=true` **成对一致**。
+
+> **修订（ADR-025，2026-10-18）**：第 1 条与下面"已定"里的「与 `floor` 对齐 / 与 `floor` 及 `baked` 三者一致」**作废** ——
+> 第 4 位改为**对着 `baked`**，并由 [baseline/bake-ledger.json](../baseline/bake-ledger.json) 的 `seq` 生成。以本文档末尾的 **ADR-025** 为准。
+
 - **依据（源码核实）**：BakaSU 的 `installer.sh::check_managed_features()` 从 **module.prop** 读 `managedFeatures` 并用 `ksud feature check` 逐项判定（unsupported / managed / supported）；而 `ksud` 的 `list_module` 会从模块 config 的 `manage.*` 派生同名标签。两处不一致会自打架。
 - **代价**：多一个构建脚本；换来三处版本永不漂移。
-- **已定**：`version` 第 4 位 = **内置到容器里的那个 DSH 版本的映射值**（不是随意计数器），并必须与 `manifest.floor` 及 payload 内的 baked 版本三者一致。
-- **已定**：`version` 第 4 位 = **内置 DSH 版本号**，随"模块最低支持 DSH 版本"对齐。
-- **未定**：第 4 位的**书写形式**（我此前擅自给过一条 `主×10000+次×100+修订` 的编码规则，已按你的要求删除；这一条不替你决定）。
+- **已定**：`version` 第 4 位 = **内置到容器里的那个 DSH 版本的映射值**（不是随意计数器），并必须与 `manifest.floor` 及 payload 内的 baked 版本三者一致。（⛔ 已由 ADR-025 修订：只对着 `baked`，`floor` 不进版本号）
+- **已定**：`version` 第 4 位 = **内置 DSH 版本号**，随"模块最低支持 DSH 版本"对齐。（⛔ 同上，已作废）
+- **已定（2026-10-17）→ 修订（ADR-025，2026-10-18）**：第 4 位的书写形式是**映射序号**（第几次烘焙），由烘焙台账生成；
+  "从 semver 编码"这条路已被证否 —— semver 的序是稠密的，不存在保序的整数编码（见 [versioning §2](./versioning.md)）。
 - **未定**：`id` / `name`（暂时占位，后面再定）。
 - **重审触发**：上游 DSH 发布稳定的版本号规则，可用其数字码替换自维护序号。
 
@@ -475,7 +480,7 @@ dsh-ctl upgrade <ver>   # 手动抬升 DSH：唯一推荐入口（“0 插件更
    | | 做不做 | 说明 |
    |---|---|---|
    | (a) **模块自身更新**（壳修复 / 容器修复 / 组合变更） | **发** | 走模块仓库，`versionCode` +1 |
-   | (b) **模块内置的 DSH 基线抬升** | **随 (a) 一起发**，不单独推 | 抬 `version` 第 4 位 + `manifest.floor`（ADR-010 要求三者一致） |
+   | (b) **模块内置的 DSH 基线抬升** | **随 (a) 一起发**，不单独推 | 换 payload + 台账记一行 → 抬 `version` 第 4 位、刷新 `manifest.baked`；`floor` 是否跟着抬是另一件事（ADR-025） |
    | (c) **运行中的 DSH 自动升级** | ⛔ **不做** | 没有后台更新检查、没有静默替换版本层 |
 
 4. **与 ADR-003（floor-only）不矛盾**：floor 管的是**闸门语义**（允许高于 floor 的版本运行），本条管的是**分发策略**（我们不主动推）—— 两个不同维度。
@@ -685,7 +690,7 @@ dsh-ctl upgrade <ver>   # 手动抬升 DSH：唯一推荐入口（“0 插件更
 
 | 已有条款 | 关系 |
 |---|---|
-| **ADR-010** | 已规定 `versionCode` **单调递增、永不回退**（"管理器按它比对更新，回退会导致更新 / 降级不生效"）；`version` 第 4 位（内置 DSH 版本映射值）同样**只增不减** |
+| **ADR-010** | 已规定 `versionCode` **单调递增、永不回退**（"管理器按它比对更新，回退会导致更新 / 降级不生效"）；`version` 第 4 位（烘焙序号，ADR-025）同样**只增不减** |
 | **ADR-003** | floor 闸门管的是"**DSH 版本**不得低于地板"；本条把同一条原则**推广到模块版本这一层** |
 | **ADR-017 决定 C** | **卸载即清空模块域** → 于是"卸载后装旧版"天然就是**干净重装**。**两条政策是配套的** |
 
@@ -1010,7 +1015,7 @@ const response = await fetch(request.url, {...headers: {..., 'X-Token': token}})
 命中 -alpha / -beta / -dev …                        → 直接拒绝
 ```
 
-→ 这条同时是 [tools/version.env](../tools/version.env) 的 `V_DSH` 与 `manifest` 的 `baked` / `floor` 的**准入闸门**（ADR-010 那条单一真源链的上游）。
+→ 这条同时是 [baseline/bake-ledger.json](../baseline/bake-ledger.json) 的 `baked` 与 `manifest` 的 `baked` / `floor` 的**准入闸门**（ADR-025 起第 4 位由台账派生，这里仍是上游）。
 
 ### 决定 B：与 floor 闸门的分工（防打架）
 
@@ -1020,7 +1025,7 @@ const response = await fetch(request.url, {...headers: {..., 'X-Token': token}})
 | **本条** | "**我们内置哪一份**" —— 候选只来自 RC 通道 |
 
 - 二者**不矛盾**：**用户自己手装 alpha 仍然允许**（ADR-003 未变），壳只按 ADR-015 决定 5 / ADR-018 决定 4 在 `dsh-ctl status` 里把偏离**显示出来**（写明"用户自装：alpha 通道"）。
-- 反向也成立：因为 `version` 第 4 位 / `manifest.baked` / payload 三者必须一致（ADR-010），**只追 RC 自动约束了 floor** —— 不会出现"floor 钉在 alpha 上"。
+- 反向也成立：因为 `version` 第 4 位 / `manifest.baked` / payload 三者**同源**（ADR-025：都由台账派生），**只追 RC 自动约束了 floor** —— 不会出现"floor 钉在 alpha 上"。
 
 ### 决定 C：正式版（无预发布后缀）不在本条约束内
 
@@ -1258,6 +1263,66 @@ ADR-013 决定 B 第 5 条原文是"**离线**：payload 从模块自带的副�
 
 - **代价**：① 首次使用不是"刷完立刻可用"，要等自举；② 自举期间占 2× 空间；③ 多了一条出网面（要记账）；④ 多一个状态文件要维护一致性。
 - **重审触发**：① payload 体积降到可接受（< 200 MB）→ 重评"塞进 zip"；② 上游给出稳定的 arm64 rootfs 直链 → 可简化成纯下载；③ GitHub Releases 在国内不可达成为常态 → 换源（并因此改 ADR-015）；④ 出现可靠的内置增量格式 → 再翻 [pitfalls B9](./pitfalls.md)。
+
+---
+
+## ADR-025 第 4 位改成「烘焙台账序号」，对着 baked 而不是 floor  ← **本次决定**
+
+- **背景**：ADR-010 对第 4 位给过三个互相冲突的说法 —— 与 `manifest.floor` 对齐、与 `floor` 及 payload 的 `baked` 三者一致、与 `baked` 一致；
+  而 [baseline §7](./baseline.md) 又明确"floor 是否跟着抬由你决定"，即 **`floor ≠ baked` 是合法状态**。
+  今天三者同值（`0.2.0-rc.2`）只是巧合，第一次"只抬 floor"或"只换 baked"就必须三选一。
+  同时 `V_DSH` 是**人肉同步**的：`tools/gen-version.py` 只校验它是整数，从不校验它与 `DSH_BAKED` 的对应关系 —— 写错不报错，静默进产物。
+
+### 决定 A：第 4 位 = 烘焙事件序号，对着 `baked`
+
+- 用户看管理器卡片想知道的是"**我容器里装的是哪份 DSH**"，那是 `baked`；`floor` 是"允许的最低"，它变了你装的东西没变。
+- ADR-022 已把「第 4 位 / `manifest.baked` / payload」绑成一组，跟 floor 绑是孤例。
+- `floor` 在 manifest 里已有自己的表达（完整 semver），不需要在版本号里再出现一次。
+
+### 决定 B：baked 的唯一来源 = 只追加的烘焙台账
+
+新增 [baseline/bake-ledger.json](../baseline/bake-ledger.json)：
+
+```json
+{ "schema": 1, "bakes": [ { "seq": 1, "baked": "0.2.0-rc.2", "date": "2026-10-17", "note": "首个基线" } ] }
+```
+
+- `seq` 就是 `version` 第 4 位；最后一条的 `baked` 就是 `manifest.baked`（生成器另写一个 `baked_seq` 供展示与排障）。
+- **`tools/version.env` 删除 `V_DSH` / `DSH_BAKED`**；基线参数（`DSH_FLOOR` / `DSH_RECOMMENDED` / `NODE_FLOOR`）移到 [baseline/dsh.env](../baseline/dsh.env)。
+- 换基线 = 在台账末尾追加一行。**不记账就发不出去**（生成器 exit 2）。
+
+### 决定 C：四条机器校验（fail-closed）
+
+1. `seq` 必须从 1 连续递增（跳号 / 从 0 开始 / 非整数 → exit 2）；
+2. 每条的 `baked` 必须是合法 semver（复用 versioning §9 的实现）；
+3. `floor ≤ baked`、`recommended > baked`（原有，不变）；
+4. 台账里出现**非升序**或**重复** `baked` → **只告警、不拒绝** —— 回滚是合法的（它是"又烘焙了一次"，不是"版本变低了"）。
+
+### 决定 D：同一 baked 重新打包 → 不记账，抬补丁位
+
+"第 4 位变 = DSH 换了"必须永远成立。字节变了但版本没变（重打层 / 换压缩参数 / 改 wrapper）走第 3 位。
+
+### 决定 E：`version` 永不参与任何比较
+
+- 模块更新的**唯一**排序键是整数 `versionCode`（[update.json](../update.json) 与生成器校验的都是它）。
+- 第 4 位是计数，第 1~3 位是人读的结构 —— 两者都不参与"谁更新"的判断。
+- 理由：`1.0.0.10` 在字典序上**小于** `1.0.0.9`，第 10 次发版就会翻车。
+
+### 决定 F：修订 ADR-010
+
+ADR-010 中"第 4 位与 `floor` 对齐 / 与 `floor` 及 `baked` 三者一致"**作废**，以本条为准：
+
+> 第 4 位 = 烘焙台账 `seq`，对着 `baked`；`floor` 不进版本号。
+
+ADR-010 的其余条款（四位结构 / `versionCode` 独立计数 / 单一真源 / `managedFeatures`）**不变**。
+
+### 决定 G：验证不是靠记性
+
+新增 [tools/test-versioning.py](../tools/test-versioning.py)：20 条断言覆盖"派生 / 跳号 / 从 0 开始 / 非法 semver / floor 高于 baked / recommended 不高于 baked / 残留旧字段 / 回滚告警 / 重复告警 / 台账缺失 / 漂移检测"。
+其中**拒绝类**断言全部是"故意写坏 → 必须 exit 2"，防止这道检查变成永远绿的装饰。
+
+- **代价**：① 多一个只追加的文件；② 每次换基线要记得记账（忘了会被生成器拦住，不是静默漂移）；③ 回滚时第 4 位仍会 +1，"第 4 位更大 = DSH 更新"只在**正常前进**时成立。
+- **重审触发**：① 上游给出稳定且可解析的数字版本码 → 重新评估"编码 vs 计数"；② 出现"必须在不升第 4 位的前提下换 baked"的硬需求 → 说明计数语义不够用；③ 管理器开始直接展示 manifest → 第 4 位的展示价值下降，可评估去掉。
 
 ---
 

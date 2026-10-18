@@ -11,15 +11,18 @@
     "version": "1.0.0.1",
     "versionCode": 1,
     "_version_layout": "<大版本>.<功能变更新增>.<补丁>.<内置 DSH 版本号>，见 docs/versioning.md §2",
-    "_single_source_of_truth_note": "本文件的 module/version/baked/floor/node_floor 由 tools/gen-version.py 从 tools/version.env 生成，不要手改",
-    "_single_source_of_truth": "version.env —— module.prop / manifest.json / APK 三处都由它生成，禁止手改",
+    "_single_source_of_truth_note": "本文件的 module/version/baked/baked_seq/floor/node_floor 由 tools/gen-version.py 从 tools/version.env + baseline/dsh.env + baseline/bake-ledger.json 生成，不要手改",
+    "_single_source_of_truth": "三个真源各管一件事：version.env（模块版本前三位）· baseline/dsh.env（floor / recommended / node_floor）· baseline/bake-ledger.json（第 4 位 / baked）；module.prop / manifest.json / APK 全部生成，禁止手改（ADR-025）",
     "managed_features": [],
     "_managed_features_note": "阶段一不接管任何内核特性 → 留空；有真实实现才声明，且必须与模块 config 的 manage.*=true 成对（versioning §4.3）"
   },
 
   "baked": "0.2.0-rc.2",
+  "baked_seq": 1,
+  "_baked_note": "baked 与 baked_seq 都来自 baseline/bake-ledger.json 的最后一条，不是手写的（ADR-025）：baked 是权威 semver，baked_seq 只用于展示「第几次烘焙」。",
   "floor": "0.2.0-rc.2",
-  "_recommended_note": "留空 = 不向用户推荐任何升级；只在 version.env 的 DSH_RECOMMENDED 非空时才出现，且必须 > floor",
+  "_floor_note": "floor 是允许的最低版本，与 baked 是两件事：floor 不高于 baked 即可，两者不必相等。抬 floor 不改 version 第 4 位（ADR-025）。",
+  "_recommended_note": "留空 = 不向用户推荐任何升级；只在 baseline/dsh.env 的 DSH_RECOMMENDED 非空时才出现，且必须 > baked",
 
   "node_floor": "24.0.0",
   "pnpm_floor": "10.0.0",
