@@ -165,6 +165,8 @@ def check_source(source_path):
                         problems.append("解包内容与 tarball 不一致: " + rel)
         if not os.path.exists(TREE_MANIFEST):
             problems.append("缺少 vendor/dsh/tree.sha256")
+        elif src.get("tree_manifest_sha256") and sha256_file(TREE_MANIFEST) != src["tree_manifest_sha256"]:
+            problems.append("tree.sha256 自身的 sha256 与 SOURCE.json 不一致")
 
     if problems:
         for p in problems:
