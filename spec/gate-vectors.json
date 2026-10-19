@@ -362,5 +362,140 @@
       "expect": "ok",
       "why": "本项目当前基线"
     }
+  ],
+  "decision": [
+    {
+      "installed": "",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "deny invalid-installed 0",
+      "why": "空串：层坏了也要能给出结论，而不是崩"
+    },
+    {
+      "installed": "0.2",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "deny invalid-installed 0",
+      "why": "版本串非法"
+    },
+    {
+      "installed": "0.2.0-rc.2",
+      "floor": "0.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "deny invalid-manifest 0",
+      "why": "floor 非法 = 清单坏了"
+    },
+    {
+      "installed": "0.2.0-rc.2",
+      "floor": "0.2.0-rc.2",
+      "baked": "x",
+      "expect": "deny invalid-manifest 0",
+      "why": "baked 非法"
+    },
+    {
+      "installed": "0.2.0-rc.1",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "deny below-floor 0",
+      "why": "低于地板：拒绝（不是安全模式能救的）"
+    },
+    {
+      "installed": "0.2.0-rc.2",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok older-than-baked 0",
+      "why": "等于地板但低于 baked：floor-only 允许"
+    },
+    {
+      "installed": "0.2.0",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok older-than-baked 0",
+      "why": "final 0.2.0 > rc 地板，但仍低于 0.2.1 线"
+    },
+    {
+      "installed": "0.2.1-rc.2",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok baked 0",
+      "why": "就是内置基线"
+    },
+    {
+      "installed": "0.2.1",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok user-upgraded 0",
+      "why": "final > 所有 rc：rc 之后的正式版是升级"
+    },
+    {
+      "installed": "0.2.1-rc.10",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.9",
+      "expect": "ok user-upgraded 0",
+      "why": "rc 序号按数值比（rc.10 > rc.9）"
+    },
+    {
+      "installed": "0.2.2-alpha.5",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok user-upgraded-alpha 1",
+      "why": "alpha 通道：允许，但强制安全模式（ADR-023）"
+    },
+    {
+      "installed": "0.2.2-beta.1",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok user-upgraded-prerelease 1",
+      "why": "非 rc 的预发布一律安全模式 —— 比 ADR-023 多守一格"
+    },
+    {
+      "installed": "0.2.0-rc.2",
+      "floor": "0.2.1-rc.2",
+      "baked": "0.2.0-rc.2",
+      "expect": "deny invalid-manifest 0",
+      "why": "floor > baked：清单自相矛盾，宁可不跑"
+    },
+    {
+      "installed": "0.2.0-alpha.1",
+      "floor": "0.2.0-rc.1",
+      "baked": "0.2.0-rc.2",
+      "expect": "deny below-floor 0",
+      "why": "低于地板时先拒，不再谈安全模式"
+    },
+    {
+      "installed": "0.2.0-rc.2",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.0-rc.2",
+      "expect": "ok baked 0",
+      "why": "floor == baked == installed 的常态"
+    },
+    {
+      "installed": "0.2.0-rc.2",
+      "floor": "0.2.0-rc.1",
+      "baked": "0.2.0-rc.2",
+      "expect": "ok baked 0",
+      "why": "地板低于 baked 且 installed = baked"
+    },
+    {
+      "installed": "0.3.0-rc.1",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok user-upgraded 0",
+      "why": "rc 通道正常升级"
+    },
+    {
+      "installed": "0.1.9",
+      "floor": "0.2.0-rc.1",
+      "baked": "0.2.0-rc.2",
+      "expect": "deny below-floor 0",
+      "why": "major 更低"
+    },
+    {
+      "installed": "0.2.1-rc.2+build.7",
+      "floor": "0.2.0-rc.2",
+      "baked": "0.2.1-rc.2",
+      "expect": "ok baked 0",
+      "why": "build 元数据不参与比较"
+    }
   ]
 }

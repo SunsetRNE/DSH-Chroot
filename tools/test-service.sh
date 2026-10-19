@@ -2,7 +2,9 @@
 # tools/test-service.sh —— service.sh 的**契约测试**（dash 与 mksh 两端都该过）
 #
 # 覆盖：六条契约（非交互 / 环境钉死 / 幂等 / 先停后换 / 默认离线 / 状态+退出码）
-#       + 两层布局（node 层复用、dsh 层切换、指针原子性）+ 退出码 0/10/20/30/40
+#       + 两层布局（node 层复用、dsh 层切换、指针原子性）
+#       + 版本闸门（ADR-026：回落 baked / 50 / invalid-installed / alpha 标记 / 缺 manifest）
+#       + 退出码 0/10/20/30/40/50
 #
 # 用法: sh tools/test-service.sh
 
@@ -72,6 +74,13 @@ run_has "status 报 node: missing" 0 "node      : missing" SVC_RUN status
 run_has "无层时 start -> 30" 30 "未就绪" SVC_RUN start
 run "install 无参数 -> 30" 30 SVC_RUN install
 run "未知动词 -> 2" 2 SVC_RUN 不存在
+# 回归：测试缝变量在真机上不存在，set -u 下也必须能跑（曾把 ${DSH_PATH_OVERRIDE:-} 写成字面量 @@{...}）
+_out=$( ( unset DSH_PATH_OVERRIDE; "$SH_BIN" "$SVC" help ) 2>&1 ); _rc=$?
+if [ "$_rc" -eq 0 ] && printf '%s' "$_out" | grep -q 'DSH_SERVICE_HELP'; then
+    _ok "help 不依赖 DSH_PATH_OVERRIDE（set -u 安全）"
+else
+    _no "help 不依赖 DSH_PATH_OVERRIDE" "rc=$_rc: $_out"
+fi
 
 echo
 echo "== 2) 投递两层（离线路径）"
@@ -91,6 +100,13 @@ else
     _no "active 指针" "实得: $(cat "$T/active" 2>/dev/null || echo 无)"
 fi
 run_has "bootstrap 第二次 -> 10" 10 "already ready" SVC_RUN bootstrap --offline
+
+echo
+echo "== 2.5) 版本闸门：放一份 manifest（baked = 当前 active）"
+cat >"$T/manifest.json" <<EOF
+{"schema":1,"baked":"0.2.0-rc.2","baked_seq":1,"floor":"0.2.0-rc.2"}
+EOF
+run_has "status 报版本闸门 ok" 0 "ok (baked)" SVC_RUN status
 
 echo
 echo "== 3) 幂等矩阵（契约③）"
@@ -184,6 +200,60 @@ fi
 echo
 echo "== 9) 日志（契约⑥）"
 run_has "logs 能读到记录" 0 "DSH_SERVICE_LOGS" SVC_RUN logs --tail 5
+
+
+echo
+echo "== 10) 版本闸门（ADR-026）"
+# 10.1 低于 floor + baked 层可用 -> 回落 baked 并启动
+printf '%s\n' "0.2.0-rc.2" >"$T/active"
+cat >"$T/manifest.json" <<EOF
+{"schema":1,"baked":"0.2.1-rc.2","baked_seq":2,"floor":"0.2.1-rc.2"}
+EOF
+run_has "低于 floor -> 回落 baked 后启动" 0 "已回落" SVC_RUN start
+if [ "$(cat "$T/active" 2>/dev/null)" = "0.2.1-rc.2" ]; then
+    _ok "active 指针切回 baked"
+else
+    _no "回落指针" "实得 $(cat "$T/active" 2>/dev/null)"
+fi
+SVC_RUN stop >/dev/null 2>&1
+
+# 10.2 低于 floor + baked 层不存在 -> 50，且不该起进程
+cat >"$T/manifest.json" <<EOF
+{"schema":1,"baked":"0.9.9","baked_seq":9,"floor":"0.9.9"}
+EOF
+run_has "低于 floor 且无 baked 层 -> 50" 50 "拒绝启动" SVC_RUN start
+if pgrep -f "sleep 600" >/dev/null 2>&1; then
+    _no "50 时不该起进程" "仍有 sleep 600 残留"
+else
+    _ok "50 时没有起进程"
+fi
+
+# 10.3 .layer 里版本读不出 -> 50 invalid-installed
+mkdir -p "$T/base/dsh-broken"
+printf '{"layer":"dsh"}\n' >"$T/base/dsh-broken/.layer"
+printf '%s\n' "broken" >"$T/active"
+cat >"$T/manifest.json" <<EOF
+{"schema":1,"baked":"0.2.0-rc.2","floor":"0.2.0-rc.2"}
+EOF
+run_has "installed 读不出 -> 50" 50 "invalid-installed" SVC_RUN start
+
+# 10.4 alpha 用户层 -> 启动 + 安全模式标记
+mkdir -p "$T/base/dsh-0.2.2-alpha.5"
+printf '{"layer":"dsh","version":"0.2.2-alpha.5"}\n' >"$T/base/dsh-0.2.2-alpha.5/.layer"
+printf '%s\n' "0.2.2-alpha.5" >"$T/active"
+run_has "alpha 用户层 -> 启动 + 安全模式" 0 "安全模式" SVC_RUN start
+SVC_RUN stop >/dev/null 2>&1
+
+# 10.5 manifest 缺失 -> 50，但 status 仍要能说明原因
+mv "$T/manifest.json" "$T/manifest.json.bak"
+run_has "缺 manifest -> 50" 50 "manifest" SVC_RUN start
+run_has "status 仍能报 manifest missing" 0 "manifest  : missing" SVC_RUN status
+mv "$T/manifest.json.bak" "$T/manifest.json"
+
+# 10.6 恢复正常：闸门 ok 且能启动
+printf '%s\n' "0.2.1-rc.2" >"$T/active"
+run_has "闸门恢复 ok" 0 "version-ok" SVC_RUN start
+SVC_RUN stop >/dev/null 2>&1
 
 echo
 printf '结果: %d 通过 / %d 失败\n' "$PASS" "$FAIL"

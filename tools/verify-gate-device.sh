@@ -9,7 +9,7 @@
 # 用法（在手机上，root 或普通用户都行）:
 #     sh verify-gate-device.sh
 #
-# 期望最后一行:  RESULT ok 76/76
+# 期望最后一行:  RESULT ok 95/95
 # 如果出现 FAIL，把那几行连同上面的"环境"一起贴回来即可定位。
 #
 # 万一报 "then: not found" / "Syntax error" 之类：文件八成被转成了 CRLF
@@ -49,6 +49,11 @@ SG_MINOR=
 SG_PATCH=
 SG_PRE=
 SG_CMP=
+
+# 策略层的输出（ADR-026）；semver_decide 之后读这三个变量
+SEMVER_VERDICT=
+SEMVER_REASON=
+SEMVER_SAFE_MODE=0
 
 # 字符串比较：在 C locale 下按字节序
 _sg_strcmp() { # $1 $2 -> SG_CMP
@@ -256,7 +261,55 @@ _sg_impl() {
     done
 }
 
-# 批量：TSV 每行「compare<TAB>a<TAB>b」或「check<TAB>v」，输出同样行数
+
+# 策略层：verdict(ok|deny) · reason · safe_mode(0|1)，见 ADR-026
+# 纯判定：不读盘、不改指针 —— 回落 baked / 退出码 / 日志由壳负责
+semver_decide() {
+    SEMVER_VERDICT=
+    SEMVER_REASON=
+    SEMVER_SAFE_MODE=0
+
+    if ! semver_check "${1-}"; then
+        SEMVER_VERDICT=deny; SEMVER_REASON=invalid-installed; return 0
+    fi
+    if ! semver_check "${2-}" || ! semver_check "${3-}"; then
+        SEMVER_VERDICT=deny; SEMVER_REASON=invalid-manifest; return 0
+    fi
+
+    # floor > baked：清单自相矛盾，宁可不跑
+    if semver_cmp "${2-}" "${3-}"; then
+        if [ "$SEMVER_CMP" = 1 ]; then
+            SEMVER_VERDICT=deny; SEMVER_REASON=invalid-manifest; return 0
+        fi
+    fi
+
+    if semver_cmp "${1-}" "${2-}"; then
+        if [ "$SEMVER_CMP" = -1 ]; then
+            SEMVER_VERDICT=deny; SEMVER_REASON=below-floor; return 0
+        fi
+    fi
+
+    if semver_cmp "${1-}" "${3-}"; then
+        if [ "$SEMVER_CMP" = -1 ]; then
+            SEMVER_VERDICT=ok; SEMVER_REASON=older-than-baked; return 0
+        fi
+        if [ "$SEMVER_CMP" = 0 ]; then
+            SEMVER_VERDICT=ok; SEMVER_REASON=baked; return 0
+        fi
+    fi
+
+    # installed > baked：看通道。重新解析 installed，才能拿到它自己的 prerelease
+    semver_check "${1-}"
+    case $SG_PRE in
+        '') SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded ;;
+        rc|rc.*) SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded ;;
+        alpha|alpha.*) SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded-alpha; SEMVER_SAFE_MODE=1 ;;
+        *) SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded-prerelease; SEMVER_SAFE_MODE=1 ;;
+    esac
+    return 0
+}
+
+# 批量：TSV 每行「compare<TAB>a<TAB>b」「check<TAB>v」或「decide<TAB>i<TAB>f<TAB>b」，输出同样行数
 semver_batch() {
     _sg_file=$1
     if [ ! -f "$_sg_file" ]; then
@@ -285,6 +338,22 @@ semver_batch() {
             check)
                 if semver_check "$_sg_rest"; then echo ok; else echo invalid; fi
                 ;;
+            decide)
+                case $_sg_rest in
+                    *"$_sg_tab"*) ;;
+                    *) echo error; continue ;;
+                esac
+                _sg_i=${_sg_rest%%"$_sg_tab"*}
+                _sg_rest2=${_sg_rest#*"$_sg_tab"}
+                case $_sg_rest2 in
+                    *"$_sg_tab"*) ;;
+                    *) echo error; continue ;;
+                esac
+                _sg_fl=${_sg_rest2%%"$_sg_tab"*}
+                _sg_bk=${_sg_rest2#*"$_sg_tab"}
+                semver_decide "$_sg_i" "$_sg_fl" "$_sg_bk"
+                echo "$SEMVER_VERDICT $SEMVER_REASON $SEMVER_SAFE_MODE"
+                ;;
             *)
                 echo error
                 ;;
@@ -310,19 +379,28 @@ semver_gate_main() {
             echo invalid
             return 1
             ;;
+        decide)
+            if [ "$#" -lt 4 ]; then
+                echo "用法: sh lib/semver-gate.sh decide INSTALLED FLOOR BAKED" >&2
+                return 2
+            fi
+            semver_decide "$2" "$3" "$4"
+            echo "$SEMVER_VERDICT $SEMVER_REASON $SEMVER_SAFE_MODE"
+            return 0
+            ;;
         batch)
             semver_batch "${2-}"
             return $?
             ;;
         *)
-            echo "用法: sh lib/semver-gate.sh compare A B | check V | batch FILE" >&2
+            echo "用法: sh lib/semver-gate.sh compare A B | check V | decide I F B | batch FILE" >&2
             return 2
             ;;
     esac
 }
 
 # ---------- 以下为向量与跑分（来自 spec/gate-vectors.json） ----------
-echo "== 逐条比对（共 76 条）"
+echo "== 逐条比对（共 95 条）"
 _TOTAL=0
 _PASS=0
 _FAIL=0
@@ -355,6 +433,15 @@ _gate_one() {
             _want=${3-}
             _label="check [$_a]"
             if semver_check "$_a"; then _got=ok; else _got=invalid; fi
+            ;;
+        decide)
+            _i=${2-}
+            _f=${3-}
+            _b=${4-}
+            _want=${5-}
+            _label="decide $_i $_f $_b"
+            semver_decide "$_i" "$_f" "$_b"
+            _got="$SEMVER_VERDICT $SEMVER_REASON $SEMVER_SAFE_MODE"
             ;;
         *)
             _label=unknow
@@ -454,6 +541,25 @@ check|1.2.3-a-b|ok
 check|1.2.3-rc.1-|ok
 check|10.20.30|ok
 check|0.2.0-rc.2|ok
+decide||0.2.0-rc.2|0.2.1-rc.2|deny invalid-installed 0
+decide|0.2|0.2.0-rc.2|0.2.1-rc.2|deny invalid-installed 0
+decide|0.2.0-rc.2|0.2|0.2.1-rc.2|deny invalid-manifest 0
+decide|0.2.0-rc.2|0.2.0-rc.2|x|deny invalid-manifest 0
+decide|0.2.0-rc.1|0.2.0-rc.2|0.2.1-rc.2|deny below-floor 0
+decide|0.2.0-rc.2|0.2.0-rc.2|0.2.1-rc.2|ok older-than-baked 0
+decide|0.2.0|0.2.0-rc.2|0.2.1-rc.2|ok older-than-baked 0
+decide|0.2.1-rc.2|0.2.0-rc.2|0.2.1-rc.2|ok baked 0
+decide|0.2.1|0.2.0-rc.2|0.2.1-rc.2|ok user-upgraded 0
+decide|0.2.1-rc.10|0.2.0-rc.2|0.2.1-rc.9|ok user-upgraded 0
+decide|0.2.2-alpha.5|0.2.0-rc.2|0.2.1-rc.2|ok user-upgraded-alpha 1
+decide|0.2.2-beta.1|0.2.0-rc.2|0.2.1-rc.2|ok user-upgraded-prerelease 1
+decide|0.2.0-rc.2|0.2.1-rc.2|0.2.0-rc.2|deny invalid-manifest 0
+decide|0.2.0-alpha.1|0.2.0-rc.1|0.2.0-rc.2|deny below-floor 0
+decide|0.2.0-rc.2|0.2.0-rc.2|0.2.0-rc.2|ok baked 0
+decide|0.2.0-rc.2|0.2.0-rc.1|0.2.0-rc.2|ok baked 0
+decide|0.3.0-rc.1|0.2.0-rc.2|0.2.1-rc.2|ok user-upgraded 0
+decide|0.1.9|0.2.0-rc.1|0.2.0-rc.2|deny below-floor 0
+decide|0.2.1-rc.2+build.7|0.2.0-rc.2|0.2.1-rc.2|ok baked 0
 GATE_VECTORS
 
 echo
@@ -466,9 +572,16 @@ _probe() {
 _probe 0.2.1-rc.1 0.2.0-rc.2 1
 _probe 0.2.0 0.2.0-rc.2 1
 _probe 0.2.0-rc.10 0.2.0-rc.9 1
+_dprobe() {
+    semver_decide "$1" "$2" "$3"
+    printf '  decide %-14s floor %-11s baked %-11s -> %s %s safe=%s
+'         "$1" "$2" "$3" "$SEMVER_VERDICT" "$SEMVER_REASON" "$SEMVER_SAFE_MODE"
+}
+_dprobe 0.2.0-rc.2 0.2.0-rc.2 0.2.0-rc.2
+_dprobe 0.2.2-alpha.5 0.2.0-rc.2 0.2.1-rc.2
 
 echo
-if [ "$_FAIL" -eq 0 ] && [ "$_TOTAL" -eq 76 ]; then
+if [ "$_FAIL" -eq 0 ] && [ "$_TOTAL" -eq 95 ]; then
     echo "RESULT ok $_PASS/$_TOTAL"
     exit 0
 fi

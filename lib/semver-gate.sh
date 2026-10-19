@@ -7,15 +7,17 @@
 # 用法（执行）:
 #     sh lib/semver-gate.sh compare 0.2.1-rc.1 0.2.0-rc.2    # -> -1 | 0 | 1（非法 -> invalid, 退出 2）
 #     sh lib/semver-gate.sh check 0.2.0-rc.2                 # -> ok | invalid
+#     sh lib/semver-gate.sh decide 0.2.2-alpha.5 0.2.0-rc.2 0.2.1-rc.2
+#                                                            # -> "ok user-upgraded-alpha 1"
 #     sh lib/semver-gate.sh batch /tmp/vectors.tsv           # 每行一条，输出同样行数
 #
 # 用法（库，推荐在脚本里 source，省掉 fork）:
 #     . /path/to/lib/semver-gate.sh
-#     if semver_cmp "$installed" "$floor"; then
-#         [ "$SEMVER_CMP" -ge 0 ] || deny
-#     else
-#         deny   # 版本串本身非法
-#     fi
+#     semver_decide "$installed" "$floor" "$baked"
+#     case $SEMVER_VERDICT in
+#         ok)   [ "$SEMVER_SAFE_MODE" = 1 ] && need_safe_mode ;;
+#         deny) deny "$SEMVER_REASON" ;;
+#     esac
 #
 # 严格性（与 Python / Node 实现完全一致）:
 #   - 不做 trim；核心三段数字不许前导零；必须恰好三段
@@ -34,6 +36,11 @@ SG_MINOR=
 SG_PATCH=
 SG_PRE=
 SG_CMP=
+
+# 策略层的输出（ADR-026）；semver_decide 之后读这三个变量
+SEMVER_VERDICT=
+SEMVER_REASON=
+SEMVER_SAFE_MODE=0
 
 # 字符串比较：在 C locale 下按字节序
 _sg_strcmp() { # $1 $2 -> SG_CMP
@@ -241,7 +248,55 @@ _sg_impl() {
     done
 }
 
-# 批量：TSV 每行「compare<TAB>a<TAB>b」或「check<TAB>v」，输出同样行数
+
+# 策略层：verdict(ok|deny) · reason · safe_mode(0|1)，见 ADR-026
+# 纯判定：不读盘、不改指针 —— 回落 baked / 退出码 / 日志由壳负责
+semver_decide() {
+    SEMVER_VERDICT=
+    SEMVER_REASON=
+    SEMVER_SAFE_MODE=0
+
+    if ! semver_check "${1-}"; then
+        SEMVER_VERDICT=deny; SEMVER_REASON=invalid-installed; return 0
+    fi
+    if ! semver_check "${2-}" || ! semver_check "${3-}"; then
+        SEMVER_VERDICT=deny; SEMVER_REASON=invalid-manifest; return 0
+    fi
+
+    # floor > baked：清单自相矛盾，宁可不跑
+    if semver_cmp "${2-}" "${3-}"; then
+        if [ "$SEMVER_CMP" = 1 ]; then
+            SEMVER_VERDICT=deny; SEMVER_REASON=invalid-manifest; return 0
+        fi
+    fi
+
+    if semver_cmp "${1-}" "${2-}"; then
+        if [ "$SEMVER_CMP" = -1 ]; then
+            SEMVER_VERDICT=deny; SEMVER_REASON=below-floor; return 0
+        fi
+    fi
+
+    if semver_cmp "${1-}" "${3-}"; then
+        if [ "$SEMVER_CMP" = -1 ]; then
+            SEMVER_VERDICT=ok; SEMVER_REASON=older-than-baked; return 0
+        fi
+        if [ "$SEMVER_CMP" = 0 ]; then
+            SEMVER_VERDICT=ok; SEMVER_REASON=baked; return 0
+        fi
+    fi
+
+    # installed > baked：看通道。重新解析 installed，才能拿到它自己的 prerelease
+    semver_check "${1-}"
+    case $SG_PRE in
+        '') SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded ;;
+        rc|rc.*) SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded ;;
+        alpha|alpha.*) SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded-alpha; SEMVER_SAFE_MODE=1 ;;
+        *) SEMVER_VERDICT=ok; SEMVER_REASON=user-upgraded-prerelease; SEMVER_SAFE_MODE=1 ;;
+    esac
+    return 0
+}
+
+# 批量：TSV 每行「compare<TAB>a<TAB>b」「check<TAB>v」或「decide<TAB>i<TAB>f<TAB>b」，输出同样行数
 semver_batch() {
     _sg_file=$1
     if [ ! -f "$_sg_file" ]; then
@@ -270,6 +325,22 @@ semver_batch() {
             check)
                 if semver_check "$_sg_rest"; then echo ok; else echo invalid; fi
                 ;;
+            decide)
+                case $_sg_rest in
+                    *"$_sg_tab"*) ;;
+                    *) echo error; continue ;;
+                esac
+                _sg_i=${_sg_rest%%"$_sg_tab"*}
+                _sg_rest2=${_sg_rest#*"$_sg_tab"}
+                case $_sg_rest2 in
+                    *"$_sg_tab"*) ;;
+                    *) echo error; continue ;;
+                esac
+                _sg_fl=${_sg_rest2%%"$_sg_tab"*}
+                _sg_bk=${_sg_rest2#*"$_sg_tab"}
+                semver_decide "$_sg_i" "$_sg_fl" "$_sg_bk"
+                echo "$SEMVER_VERDICT $SEMVER_REASON $SEMVER_SAFE_MODE"
+                ;;
             *)
                 echo error
                 ;;
@@ -295,12 +366,21 @@ semver_gate_main() {
             echo invalid
             return 1
             ;;
+        decide)
+            if [ "$#" -lt 4 ]; then
+                echo "用法: sh lib/semver-gate.sh decide INSTALLED FLOOR BAKED" >&2
+                return 2
+            fi
+            semver_decide "$2" "$3" "$4"
+            echo "$SEMVER_VERDICT $SEMVER_REASON $SEMVER_SAFE_MODE"
+            return 0
+            ;;
         batch)
             semver_batch "${2-}"
             return $?
             ;;
         *)
-            echo "用法: sh lib/semver-gate.sh compare A B | check V | batch FILE" >&2
+            echo "用法: sh lib/semver-gate.sh compare A B | check V | decide I F B | batch FILE" >&2
             return 2
             ;;
     esac

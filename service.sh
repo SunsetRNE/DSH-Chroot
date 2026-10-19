@@ -2,10 +2,14 @@
 # service.sh —— 壳的**唯一执行者**（ADR-013 决定 A）
 #
 # 动词: boot | start | stop | restart | status | bootstrap [--offline] | install <file> | logs [--tail N] | help
-# 退出码: 0 成功 · 10 已是当前状态 · 20 停止失败 · 30 payload 缺失/校验失败 · 40 切换失败
+# 退出码: 0 成功 · 10 已是当前状态 · 20 停止失败 · 30 payload 缺失/校验失败 · 40 切换失败 · 50 版本闸门拒绝
 #
 # 契约（ADR-013 决定 B）:
 #   ① 非交互（stdin 钉 /dev/null）② 环境钉死 ③ 幂等 ④ 先停后换 ⑤ 默认离线 ⑥ 状态+标记+退出码
+#
+# 版本闸门（ADR-026）:
+#   判定 = lib/semver-gate.sh 的 semver_decide（纯函数，不读盘）
+#   处置 = 本文件：低于 floor 先试回落 baked，回落不了才 50；alpha 只标记安全模式
 #
 # 两层布局（research §4.2；2026-10-18 裁决：两层优于单层）:
 #   base/node/             Node 层（node + npm + pnpm），不随 DSH 版本变
@@ -24,11 +28,12 @@ else
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 fi
 # 测试缝：容器里若同时存在 /system/bin（本容器就跑在手机上），强制用宿主工具集，避免每个命令都走 Android toybox
-if [ -n "@@{DSH_PATH_OVERRIDE:-}" ]; then PATH="$DSH_PATH_OVERRIDE"; fi
+if [ -n "${DSH_PATH_OVERRIDE:-}" ]; then PATH="$DSH_PATH_OVERRIDE"; fi
 export PATH
 unset CDPATH ENV 2>/dev/null || true
 
 DSH_ROOT=${DSH_ROOT:-/data/local/dsh}
+SELF_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 STATE_DIR="$DSH_ROOT/state"
 BASE_DIR="$DSH_ROOT/base"
 INBOX_DIR="$DSH_ROOT/inbox"
@@ -44,6 +49,16 @@ DSH_FAULT=${DSH_FAULT:-}
 
 mkdir -p "$STATE_DIR" "$BASE_DIR" "$INBOX_DIR" "$RUN_DIR" "$LOG_DIR" "$RUN_DIR/tmp" 2>/dev/null || true
 TMPDIR="$RUN_DIR/tmp"; HOME="$RUN_DIR"; export TMPDIR HOME
+
+# 版本闸门的两件输入：manifest 与库。先找模块域（运行时 / 测试缝），再找脚本同级（仓库里跑）
+MANIFEST_FILE=""
+for _cand in "$DSH_ROOT/manifest.json" "$SELF_DIR/manifest.json"; do
+    if [ -f "$_cand" ]; then MANIFEST_FILE=$_cand; break; fi
+done
+GATE_LIB=""
+for _cand in "$SELF_DIR/lib/semver-gate.sh" "$DSH_ROOT/lib/semver-gate.sh"; do
+    if [ -f "$_cand" ]; then GATE_LIB=$_cand; break; fi
+done
 
 log() {
     _ts=$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "-")
@@ -94,6 +109,72 @@ first_match() { # $1=glob -> 第一个真实存在的文件
     return 1
 }
 
+# ---------- 版本闸门（ADR-026）：判定在库，处置在这里 ----------
+version_gate() {
+    if [ -z "$GATE_LIB" ]; then
+        log "版本闸门缺失：找不到 lib/semver-gate.sh（模块装坏了？）"
+        mark "START version-library-missing"
+        return 50
+    fi
+    if [ -z "$MANIFEST_FILE" ]; then
+        log "版本闸门缺失：找不到 manifest.json（先找 $DSH_ROOT，再找 $SELF_DIR）"
+        mark "START version-manifest-missing"
+        return 50
+    fi
+
+    _vg_floor=$(json_field "$MANIFEST_FILE" floor)
+    _vg_baked=$(json_field "$MANIFEST_FILE" baked)
+    _vg_installed=$(json_field "$(dsh_dir_of "$_layer")/.layer" version)
+
+    . "$GATE_LIB"
+    semver_decide "$_vg_installed" "$_vg_floor" "$_vg_baked"
+
+    if [ "$SEMVER_VERDICT" = "ok" ]; then
+        if [ "$SEMVER_SAFE_MODE" = "1" ]; then
+            log "版本闸门：installed=${_vg_installed:-空} 属非 rc 预发布（$SEMVER_REASON）→ 需要安全模式（尚未实现，仅标记）"
+        fi
+        log "版本闸门：ok reason=$SEMVER_REASON installed=${_vg_installed:-空} floor=$_vg_floor baked=$_vg_baked"
+        mark "START version-ok"
+        return 0
+    fi
+
+    # deny：低于 floor 时先试回落 baked —— 这是 floor-only 的正确处置，不是拒绝
+    if [ "$SEMVER_REASON" = "below-floor" ]; then
+        if layer_ok "$_vg_baked" && semver_cmp "$_vg_baked" "$_vg_floor"; then
+            if [ "$SEMVER_CMP" -ge 0 ]; then
+                _vg_tmp="$ACTIVE_FILE.tmp"
+                if printf '%s\n' "$_vg_baked" >"$_vg_tmp" 2>/dev/null && mv "$_vg_tmp" "$ACTIVE_FILE" 2>/dev/null; then
+                    _layer=$_vg_baked
+                    log "版本闸门：installed=$_vg_installed 低于 floor=$_vg_floor → 已回落 baked=$_vg_baked"
+                    mark "START version-fallback"
+                    return 0
+                fi
+                log "版本闸门：回落失败（active 指针写不进去）"
+                mark "START version-fallback-failed"
+                return 40
+            fi
+        fi
+    fi
+
+    log "版本闸门拒绝启动：reason=$SEMVER_REASON installed=${_vg_installed:-空} floor=$_vg_floor baked=$_vg_baked"
+    mark "START version-denied"
+    return 50
+}
+
+# 只读版（给 status）：不切指针、不启动，只回答"现在这一层允不允许跑"
+version_state() {
+    if [ -z "$MANIFEST_FILE" ]; then echo "manifest-missing"; return 0; fi
+    if [ -z "$GATE_LIB" ]; then echo "library-missing"; return 0; fi
+    _vs_layer=$(active_layer) || _vs_layer=""
+    _vs_floor=$(json_field "$MANIFEST_FILE" floor)
+    _vs_baked=$(json_field "$MANIFEST_FILE" baked)
+    _vs_installed=$(json_field "$(dsh_dir_of "$_vs_layer")/.layer" version)
+    . "$GATE_LIB"
+    semver_decide "$_vs_installed" "$_vs_floor" "$_vs_baked"
+    printf '%s (%s) · installed=%s floor=%s baked=%s safemode=%s' \
+        "$SEMVER_VERDICT" "$SEMVER_REASON" "${_vs_installed:-空}" "${_vs_floor:-?}" "${_vs_baked:-?}" "$SEMVER_SAFE_MODE"
+}
+
 # ---------- 运行时适配层（换容器实现只改这两个函数） ----------
 runtime_start() {
     if [ "$DSH_RUNTIME" = "fake" ]; then
@@ -133,6 +214,7 @@ do_start() {
     if ! node_ok; then
         log "Node 层未就绪（base/node）：先 bootstrap"; mark "START payload-missing"; return 30
     fi
+    version_gate || return $?
     runtime_start || { mark "START runtime-failed"; return 30; }
     log "started (pid $(pid_of), dsh=$_layer)"; mark "START ok"; return 0
 }
@@ -165,6 +247,8 @@ do_status() {
     printf 'home      : %s\n' "$HOME"
     printf 'node      : %s\n' "$_nstate"
     printf 'layer     : %s (%s)\n' "$_layer" "$_lstate"
+    printf 'manifest  : %s\n' "${MANIFEST_FILE:-missing}"
+    printf 'version   : %s\n' "$(version_state)"
     printf 'dsh       : %s\n' "$_proc"
     printf 'bootstrap : %s\n' "$(boot_state)"
     printf 'mode      : local\n'
@@ -313,7 +397,7 @@ do_logs() {
     tail -n "$_n" "$LOG_FILE"; mark "LOGS ok"; return 0
 }
 
-usage() { sed -n '2,14p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; mark "HELP ok"; return 0; }
+usage() { sed -n '2,18p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; mark "HELP ok"; return 0; }
 
 main() {
     _verb=${1:-}

@@ -32,7 +32,7 @@ if [ -d /system/bin ]; then
 else
     PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 fi
-if [ -n "@@{DSH_PATH_OVERRIDE:-}" ]; then PATH="$DSH_PATH_OVERRIDE"; fi
+if [ -n "${DSH_PATH_OVERRIDE:-}" ]; then PATH="$DSH_PATH_OVERRIDE"; fi
 export PATH
 unset CDPATH ENV 2>/dev/null || true
 

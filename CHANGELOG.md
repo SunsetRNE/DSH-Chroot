@@ -49,6 +49,15 @@
   - 新增 [tools/test-versioning.py](tools/test-versioning.py)（20 条断言，含"故意写坏必须拒绝"）并接进 CI
   - 明文规则：`version` **永不参与比较**；模块更新只认整数 `versionCode`
   - 文档同步：versioning §2/§5/§10-§12、ADR-010 修订注记、baseline §4/§7、payload §3/§6、pitfalls A21
+- **版本闸门接线（ADR-026，2026-10-18）**：`service.sh start` 之前先跑 `decide`，闸门从"库"变成"门"
+  - `spec/gate-vectors.json` 新增第三类 **19 条 decide 向量**；py / sh / node 各加 `decide`，5 个运行体 **95/95 一致**
+  - `decide` 是纯函数：只回 `verdict reason safe_mode`；回落 / 退出码 / 日志留在壳
+  - `service.sh`：低于 `floor` 先**原子回落 baked**；回不来才 **exit 50**（与 30 区分）；alpha 只标记安全模式
+  - `status` 新增 `manifest` / `version` 两行（只读，不改退出码）
+  - 壳契约测试 32 → **43 条**（dash / mksh 双端）：回落、50、invalid-installed、alpha、缺 manifest、无测试缝变量
+  - **顺带修掉一个真机必炸的旧 bug**：入口脚本把 `${DSH_PATH_OVERRIDE:-}` 写成了字面量 `@@{DSH_PATH_OVERRIDE:-}`，
+    在设备上（没有该测试变量）`set -u` 直接报 `parameter not set`；测试因为总是导出它而全绿。记入 [pitfalls A22](docs/pitfalls.md)
+  - 变异证据：把 alpha 的 `safe_mode` 改成 0 → `FAIL 94/95`；真机自检脚本扩到 95 条（**真机 95/95 待重跑**）
 
 > 尚无模块包。此版本将随首个 Release 发布。
 

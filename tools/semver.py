@@ -16,7 +16,8 @@
 用法:
     python3 tools/semver.py                        # 跑 spec 里全部向量
     python3 tools/semver.py --batch vectors.tsv    # 每行「命令<TAB>参数…」→ 一行结果
-    from semver import compare, is_valid
+    python3 tools/semver.py --decide A FLOOR BAKED # 策略层：-> "verdict reason safe_mode"
+    from semver import compare, is_valid, decide
 """
 
 import json
@@ -88,6 +89,13 @@ def _compare_pre(a, b):
     return -1 if len(a) < len(b) else 1      # 前缀相同：段数多者更大
 
 
+def _compare_parsed(pa, pb):
+    for i in range(3):
+        if pa[i] != pb[i]:
+            return -1 if pa[i] < pb[i] else 1
+    return _compare_pre(pa[3], pb[3])
+
+
 def compare(a, b):
     """-1 / 0 / 1。任一侧非法就抛 ValueError —— 宁可炸，也不要静默放行。"""
     pa, pb = parse(a), parse(b)
@@ -95,10 +103,7 @@ def compare(a, b):
         raise ValueError("非法 semver: %r" % (a,))
     if pb is None:
         raise ValueError("非法 semver: %r" % (b,))
-    for i in range(3):
-        if pa[i] != pb[i]:
-            return -1 if pa[i] < pb[i] else 1
-    return _compare_pre(pa[3], pb[3])
+    return _compare_parsed(pa, pb)
 
 
 def gte(a, b):
@@ -107,6 +112,35 @@ def gte(a, b):
 
 def gt(a, b):
     return compare(a, b) > 0
+
+
+def decide(installed, floor, baked):
+    """版本闸门的策略层：这一层允不允许跑、要不要安全模式（ADR-026）。
+
+    返回 (verdict, reason, safe_mode)，verdict 是 ok / deny。
+    纯函数：不读盘、不改指针 —— 处置（回落 baked / 退出码 / 日志）由壳负责。
+    """
+    pi = parse(installed)
+    if pi is None:
+        return ("deny", "invalid-installed", 0)
+    pf, pb = parse(floor), parse(baked)
+    if pf is None or pb is None:
+        return ("deny", "invalid-manifest", 0)
+    if _compare_parsed(pf, pb) > 0:          # floor > baked：清单自相矛盾
+        return ("deny", "invalid-manifest", 0)
+    if _compare_parsed(pi, pf) < 0:
+        return ("deny", "below-floor", 0)
+    c = _compare_parsed(pi, pb)
+    if c < 0:
+        return ("ok", "older-than-baked", 0)
+    if c == 0:
+        return ("ok", "baked", 0)
+    first = pi[3][0] if pi[3] else None
+    if first == "alpha":
+        return ("ok", "user-upgraded-alpha", 1)
+    if first is None or first == "rc":
+        return ("ok", "user-upgraded", 0)
+    return ("ok", "user-upgraded-prerelease", 1)
 
 
 # ---------- 一张表 → 若干条待验证的用例（自检与三实现对照共用） ----------
@@ -121,6 +155,8 @@ def build_rows(spec):
         rows.append(("compare", (x, y), "-1", "chain: %s < %s" % (x, y)))
     for c in spec.get("check", []):
         rows.append(("check", (c["v"],), c["expect"], c.get("why", "")))
+    for c in spec.get("decision", []):
+        rows.append(("decide", (c["installed"], c["floor"], c["baked"]), c["expect"], c.get("why", "")))
     return rows
 
 
@@ -138,6 +174,11 @@ def evaluate(kind, args):
             if len(args) != 1:
                 return "error"
             return "ok" if is_valid(args[0]) else "invalid"
+        if kind == "decide":
+            if len(args) != 3:
+                return "error"
+            verdict, reason, safe = decide(args[0], args[1], args[2])
+            return "%s %s %d" % (verdict, reason, safe)
         return "error"
     except Exception:
         return "error"
@@ -167,10 +208,11 @@ def self_test(path=SPEC_PATH):
         got = evaluate(kind, args)
         if got != expect:
             fails.append((kind, args, expect, got, why))
-    print("向量 %d 条（compare %d / check %d）" % (
+    print("向量 %d 条（compare %d / check %d / decide %d）" % (
         len(rows),
         sum(1 for r in rows if r[0] == "compare"),
-        sum(1 for r in rows if r[0] == "check")))
+        sum(1 for r in rows if r[0] == "check"),
+        sum(1 for r in rows if r[0] == "decide")))
     if fails:
         for kind, args, expect, got, why in fails:
             print("FAIL %s %s 期望 %s 实得 %s  [%s]" % (kind, list(args), expect, got, why))
@@ -183,6 +225,9 @@ def self_test(path=SPEC_PATH):
 if __name__ == "__main__":
     if len(sys.argv) >= 3 and sys.argv[1] == "--batch":
         raise SystemExit(batch(sys.argv[2]))
+    if len(sys.argv) >= 5 and sys.argv[1] == "--decide":
+        print("%s %s %d" % decide(sys.argv[2], sys.argv[3], sys.argv[4]))
+        raise SystemExit(0)
     if len(sys.argv) >= 2 and sys.argv[1] == "--spec":
         raise SystemExit(self_test(sys.argv[2]))
     raise SystemExit(self_test())

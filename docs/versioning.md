@@ -244,29 +244,61 @@ APK 侧接入方式（二选一）：
 | POSIX sh | [lib/semver-gate.sh](../lib/semver-gate.sh) | 设备侧（Android 的 sh，**不是 bash**）与容器内 |
 | Node | [lib/semver-gate.mjs](../lib/semver-gate.mjs) | 容器内 / 壳 |
 
-唯一规格：[spec/gate-vectors.json](../spec/gate-vectors.json) —— 41 条 compare + 35 条 check，其中含一条 15 个版本的升序链（相邻必须严格递增）。
+唯一规格：[spec/gate-vectors.json](../spec/gate-vectors.json) —— 41 条 compare + 35 条 check + 19 条 decide，其中含一条 15 个版本的升序链（相邻必须严格递增）。
 
 ```bash
-python3 tools/check-gate.py       # 三份实现 × 76 条向量逐条比对；dash 与 bash --posix 各跑一遍
+python3 tools/check-gate.py       # 5 个运行体 × 95 条向量逐条比对（python / dash / bash --posix / mksh / node）
 python3 tools/check-gate.py -v    # 打印每条结果
 python3 tools/semver.py           # 只跑 Python 实现
 ```
 
-**跑过的证据**：四个实现（python / sh-dash / sh-bash / node）76/76 全一致；
-三个变异测试分别被抓到 —— 把 sh 的「数字段 < 字母段」写反、把 node 的「final > prerelease」写反、放行 prerelease 前导零。
-**一道永远绿的检查等于没有检查**，所以这三条变异测试要跟着一起维护。
+**跑过的证据**：五个运行体（python / sh-dash / sh-bash / sh-mksh / node）**95/95 全一致**；
+四个变异测试分别被抓到 —— 把 sh 的「数字段 < 字母段」写反、把 node 的「final > prerelease」写反、放行 prerelease 前导零、把 alpha 的 `safe_mode` 改成 0
+（最后这条是 2026-10-18 加 decide 时现场跑的：`FAIL 94/95`，抓的正是 `decide ['0.2.2-alpha.5', …]`）。
+**一道永远绿的检查等于没有检查**，所以这几条变异测试要跟着一起维护。
 
 ✅ **真机已闭环（2026-10-17，实测）**：设备是 **mksh R59**（`@(#)MIRBSD KSH R59 2020/10/31 Android`，
 一加 12 / PJD110 / Android 16，`/system/bin/sh` 为普通文件、含 mksh 标记、无 toybox 标记），
-在该机上跑自检脚本得到 **`RESULT ok 76/76`**。
-用 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh)（**单文件、自包含**：由 `tools/build-device-selftest.py` 把实现正文 + 76 条向量烘进去）
+当时在该机上跑自检脚本得到 **`RESULT ok 76/76`**。
+用 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh)（**单文件、自包含**：由 `tools/build-device-selftest.py` 把实现正文 + 向量烘进去）
 在真机上跑，首轮暴露了一个**方言坑**（mksh 里 `${s%%|*}` 返回空串，见 [pitfalls A20](./pitfalls.md)），修掉后设备与本机三端（mksh / dash / bash）
 一律 `RESULT ok 76/76`。`tools/check-gate.py` 现已自动纳入 mksh（装了就跑），CI 也会装 mksh 跑一遍。
+
+> ⚠️ 加了 decide 之后，自检脚本已扩到 **95 条**。本机 dash / mksh 均 **95/95**；**真机 95/95 待重跑**（上次真机证据是 76 条版本）。
 
 ```bash
 python3 tools/build-device-selftest.py           # 改完 lib 或 spec 后重新生成（CI 会校验没漂移）
 python3 tools/build-device-selftest.py --check
 ```
+
+### 9.2 策略层 `decide`（ADR-026）
+
+比较只回答"谁更新"，不回答"能不能用"。`decide` 是那一层：
+
+```
+decide(installed, floor, baked) -> verdict · reason · safe_mode
+verdict = ok | deny；safe_mode = 0 | 1
+```
+
+**纯函数**：不读盘、不改指针、不起进程。判定与处置分开 —— 回落 baked / 退出码 / 日志都在壳里。
+
+| 情况 | verdict | reason | safe_mode |
+|---|---|---|---|
+| installed 非法 / 读不出 | deny | `invalid-installed` | 0 |
+| floor / baked 非法，或 `floor > baked` | deny | `invalid-manifest` | 0 |
+| installed < floor | deny | `below-floor` | 0 |
+| floor ≤ installed < baked | ok | `older-than-baked` | 0 |
+| installed == baked | ok | `baked` | 0 |
+| installed > baked，rc / final | ok | `user-upgraded` | 0 |
+| installed > baked，alpha | ok | `user-upgraded-alpha` | **1** |
+| installed > baked，其他预发布 | ok | `user-upgraded-prerelease` | **1** |
+
+三条说明：
+
+- **`recommended` 不参与 decide** —— 软提示一旦进判定就变成硬拦；它只由 `status` 展示。
+- **alpha 的 `safe_mode` 只算不执行**：今天没有"禁用全部插件"的机制（ADR-023 的落地件），壳只把它打出来。
+- **exit 50** 是壳的处置结果，不是 decide 的输出（ADR-013 的退出码表由 ADR-026 增补）。
+
 
 ---
 

@@ -72,10 +72,11 @@ def main(argv):
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(tsv)
 
-    print("向量 %d 条（compare %d / check %d）· 规格 spec/gate-vectors.json" % (
+    print("向量 %d 条（compare %d / check %d / decide %d）· 规格 spec/gate-vectors.json" % (
         len(rows),
         sum(1 for r in rows if r[0] == "compare"),
-        sum(1 for r in rows if r[0] == "check")))
+        sum(1 for r in rows if r[0] == "check"),
+        sum(1 for r in rows if r[0] == "decide")))
     print()
 
     failures = 0

@@ -36,7 +36,7 @@ HEADER = '''#!/bin/sh
 # 用法（在手机上，root 或普通用户都行）:
 #     sh verify-gate-device.sh
 #
-# 期望最后一行:  RESULT ok 76/76
+# 期望最后一行:  RESULT ok @@{TOTAL}/@@{TOTAL}
 # 如果出现 FAIL，把那几行连同上面的"环境"一起贴回来即可定位。
 #
 # 万一报 "then: not found" / "Syntax error" 之类：文件八成被转成了 CRLF
@@ -109,6 +109,15 @@ _gate_one() {
             _label="check [$_a]"
             if semver_check "$_a"; then _got=ok; else _got=invalid; fi
             ;;
+        decide)
+            _i=@@{2-}
+            _f=@@{3-}
+            _b=@@{4-}
+            _want=@@{5-}
+            _label="decide $_i $_f $_b"
+            semver_decide "$_i" "$_f" "$_b"
+            _got="$SEMVER_VERDICT $SEMVER_REASON $SEMVER_SAFE_MODE"
+            ;;
         *)
             _label=unknow
             _got=error
@@ -144,6 +153,13 @@ _probe() {
 _probe 0.2.1-rc.1 0.2.0-rc.2 1
 _probe 0.2.0 0.2.0-rc.2 1
 _probe 0.2.0-rc.10 0.2.0-rc.9 1
+_dprobe() {
+    semver_decide "$1" "$2" "$3"
+    printf '  decide %-14s floor %-11s baked %-11s -> %s %s safe=%s\n' \
+        "$1" "$2" "$3" "$SEMVER_VERDICT" "$SEMVER_REASON" "$SEMVER_SAFE_MODE"
+}
+_dprobe 0.2.0-rc.2 0.2.0-rc.2 0.2.0-rc.2
+_dprobe 0.2.2-alpha.5 0.2.0-rc.2 0.2.1-rc.2
 
 echo
 if [ "$_FAIL" -eq 0 ] && [ "$_TOTAL" -eq @@{TOTAL} ]; then
@@ -171,6 +187,8 @@ def build_vectors():
     for kind, args, expect, _why in rows:
         if kind == "compare":
             out.append("compare|" + args[0] + "|" + args[1] + "|" + expect)
+        elif kind == "decide":
+            out.append("decide|" + args[0] + "|" + args[1] + "|" + args[2] + "|" + expect)
         else:
             out.append("check|" + args[0] + "|" + expect)
     return rows, "\n".join(out)
@@ -180,7 +198,7 @@ def compose():
     rows, vectors = build_vectors()
     total = str(len(rows))
     dollar_brace = "$" + "{"
-    header = HEADER.replace("@@{", dollar_brace).replace("@@{TOTAL}", total)
+    header = HEADER.replace("@@{TOTAL}", total).replace("@@{", dollar_brace)
     body = read_lib_body().replace("@@{", dollar_brace)
     runner = (RUNNER.replace("@@{VECTORS}", vectors)
                     .replace("@@{TOTAL}", total)
