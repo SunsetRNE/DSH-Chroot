@@ -43,7 +43,6 @@ ENTRIES = [
     ("service.sh", os.path.join(TPL, "service.sh"), 0o755),
     ("uninstall.sh", os.path.join(TPL, "uninstall.sh"), 0o755),
     ("customize.sh", os.path.join(TPL, "customize.sh"), 0o755),
-    ("install.sh", os.path.join(TPL, "install.sh"), 0o755),
     ("META-INF/com/google/android/update-binary", os.path.join(TPL, "update-binary"), 0o755),
     ("META-INF/com/google/android/updater-script", os.path.join(TPL, "updater-script"), 0o644),
     ("bin/service.sh", os.path.join(ROOT, "service.sh"), 0o755),
@@ -118,6 +117,10 @@ def build():
     baked = ledger_baked()
     if manifest.get("baked") != baked:
         die("manifest.baked(" + str(manifest.get("baked")) + ") 与烘焙台账最后一条（" + str(baked) + "）不一致")
+
+    # pitfalls A23：包根一旦出现 install.sh，Magisk/KernelSU 会判成 legacy 模块，只解压几个文件
+    if any(arc == "install.sh" for arc, _, _ in ENTRIES):
+        die("包根不能有 install.sh：安装器会把它判成 legacy 模块（docs/pitfalls.md A23）")
 
     files = []
     total = 0
@@ -208,6 +211,7 @@ def selftest():
         names = set(zf.namelist())
         missing = sorted(required - names)
         chk("必需条目齐全", not missing, ", ".join(missing))
+        chk("包根没有 install.sh（legacy 陷阱 A23）", "install.sh" not in names)
         bad_modes = []
         for arc in EXECUTABLES:
             info = zf.getinfo(arc)

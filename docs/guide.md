@@ -21,7 +21,7 @@
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | **版本闸门接线（ADR-026）** | ✅ 2026-10-18：`decide` 纯函数（19 条向量 · 5 实现 95/95）· `service.sh start` 前判定 · 低于 floor **回落 baked** · 新退出码 **50** · 壳契约 43 条（dash/mksh） |
-| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 11 条目 · **16,896 字节**（解压 40,308）· 确定性 + 安装模拟 **19/19**（[docs/module.md](./module.md)） |
+| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 10 条目 · 确定性 + 安装模拟 **20/20**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
@@ -63,7 +63,7 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 3 | [docs/research.md](./research.md) | **研究文档**：目标、现状盘点、路线比较、架构、版本策略、端口/通信、缺口、未验证项 |
 | 4 | [docs/baseline.md](./baseline.md) | **基线**：Ubuntu 24.04 + Node 24 + **pnpm 11.x** + DSH 基线，含 libc 依赖审计与 manifest 规范 |
 | 5 | [docs/projects.md](./projects.md) | **涉及项目清单**：用/不用/备选，各自的角色与风险 |
-| 6 | [docs/pitfalls.md](./pitfalls.md) | **反例集**：会绕远路的做法（22 条）+ 值得进阶的方向（10 条） |
+| 6 | [docs/pitfalls.md](./pitfalls.md) | **反例集**：会绕远路的做法（23 条）+ 值得进阶的方向（10 条） |
 | 7 | [docs/decisions.md](./decisions.md) | **决策记录（ADR）**：已拍板的事 + 代价 + 重审触发 |
 | 8 | [docs/threat-model.md](./threat-model.md) | **威胁模型（归拢）**：资产 / 对手 / 六条边界 / 威胁↔ADR 对账 / **不设防声明** / 开着的口子 |
 | 9 | [docs/recovery.md](./recovery.md) | **刷机前的证据与回滚预案**（ARB 警告 / 包形态 / 抽分区 / 决策树） |
@@ -211,7 +211,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── research.md                 # 研究文档（目标 / 盘点 / 架构 / 策略 / 未验证项）
 │   ├── baseline.md                 # 基线定义 + libc 依赖审计 + manifest 规范
 │   ├── projects.md                 # 涉及项目清单（用 / 不用 / 备选）
-│   ├── pitfalls.md                 # 反例集：弯路 22 条 + 进阶 10 条（A20 mksh 方言；A21 semver 编码；A22 占位符漏展开）
+│   ├── pitfalls.md                 # 反例集：弯路 23 条 + 进阶 10 条（A20 mksh 方言；A21 semver 编码；A22 占位符；A23 install.sh legacy）
 │   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-026
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）

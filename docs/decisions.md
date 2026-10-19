@@ -700,7 +700,8 @@ dsh-ctl upgrade <ver>   # 手动抬升 DSH：唯一推荐入口（“0 插件更
 
 ### 决定
 
-1. **拒绝降级在 `install.sh` 里执行**（**不依赖管理器**，因为管理器通常不拦降级安装）：
+1. **拒绝降级在安装期钩子里执行**（**不依赖管理器**，因为管理器通常不拦降级安装）。
+   ⚠️ 实现放在 `customize.sh`，**不能叫 `install.sh`** —— 包根出现 `install.sh` 会被 Magisk/KernelSU 判成 legacy 模块（[pitfalls A23](./pitfalls.md)）。逻辑如下：
 
    ```
    旧 = /data/adb/modules/<id>/module.prop 的 versionCode   （模块未装则跳过）

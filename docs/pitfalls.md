@@ -122,6 +122,12 @@
 - **正确做法**：入口脚本里只写真正的 `${VAR:-}`；`@@{` 只允许出现在生成器里。并加一条**不设测试缝变量也能跑**的契约断言（本仓已在 `tools/test-service.sh` 里加：`unset DSH_PATH_OVERRIDE; sh service.sh help` 必须 rc=0）。
 - **判据**：任何"只在测试里设置"的变量，都要有一条"不设置时也能工作"的用例。
 
+### A23. 在模块包根放 `install.sh` —— 管理器"装不上"，staging 目录却是空的
+- **症状**：模块 zip 在 ReSukiSU / KernelSU 里点安装，管理器只报一句失败；`/data/adb/modules_update/<id>/` **存在但是空目录**，`/data/local/dsh` 里什么也没更新。
+- **为什么错**：Magisk / KernelSU 的安装器用「zip 里有没有 `install.sh`」判断 **legacy 模块** —— KernelSU `installer.sh` 里就一句 `is_legacy_script() { unzip -l "$ZIPFILE" install.sh | grep -q install.sh; }`。命中后它只解压 `module.prop` / `install.sh` / `uninstall.sh` / `common/*` 到临时目录并 **source `install.sh`**，**不会解 `bin/` 与 `lib/`**。于是现代布局的安装钩子在空 `MODPATH` 里 `cp bin/service.sh` 失败 → abort；而 `MODPATH` 是在这个分支之前就建好的，所以留下一个空目录。
+- **正确做法**：安装逻辑全部放在 `customize.sh`，**包根不要出现 `install.sh`**。判据：`unzip -l 包 | grep -x 'install.sh'` 必须为空；本仓 `tools/build-module.py` 与 `--selftest` 都会拦。
+- **附带坑**：安装器解包后会 `set_perm_recursive $MODPATH 0 0 0755 0644` —— **文件一律 0644**。所以模块根 `service.sh`（开机钩子）的可执行位必须在 `customize.sh` 里补（`set_perm … 0755` 或 `chmod`），否则重启后钩子不会执行，而且**不报错**。
+
 ---
 
 # B. 进阶（Advance）——每一条都写了"触发条件"
