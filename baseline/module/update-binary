@@ -1,0 +1,48 @@
+#!/sbin/sh
+# update-binary —— 恢复模式安装入口（Magisk / KernelSU 管理器安装不会执行本文件）
+#
+# 约定：update-binary <api> <outfd> <zipfile>
+# 本实现只做标准动作：解包 → 校验 module.prop → 落 /data/adb/modules/<id> → 跑 customize.sh。
+#
+# ⚠️ 恢复模式这条路径未在真机验证（本项目走管理器安装）。不打算用恢复模式刷的话，
+#    这个文件只是让包保持"标准模块格式"；真出问题请把完整输出贴回来。
+
+umask 022
+OUTFD=$2
+ZIPFILE=$3
+
+ui_print() {
+    printf '%s\n' "$1"
+    printf 'ui_print %s\n' "$1" >&"$OUTFD" 2>/dev/null
+}
+
+abort() {
+    ui_print "! $1"
+    exit 1
+}
+
+[ -f "$ZIPFILE" ] || abort "找不到 zip: $ZIPFILE"
+
+TMP=/dev/tmp/dsh-module
+rm -rf "$TMP"
+mkdir -p "$TMP" || abort "建临时目录失败"
+
+unzip -o "$ZIPFILE" -d "$TMP" >/dev/null 2>&1 || abort "解包失败"
+[ -f "$TMP/module.prop" ] || abort "module.prop 缺失（不是合法模块包）"
+
+MODID=$(sed -n 's/^id=//p' "$TMP/module.prop" | head -n1)
+[ -n "$MODID" ] || abort "module.prop 缺 id"
+
+MODPATH="/data/adb/modules/$MODID"
+rm -rf "$MODPATH"
+mkdir -p "$MODPATH" || abort "建模块目录失败: $MODPATH"
+cp -af "$TMP"/. "$MODPATH"/ || abort "复制失败"
+rm -rf "$MODPATH/META-INF" "$TMP"
+
+for f in service.sh uninstall.sh customize.sh install.sh bin/service.sh bin/dsh-ctl; do
+    [ -f "$MODPATH/$f" ] && chmod 0755 "$MODPATH/$f"
+done
+
+MODPATH="$MODPATH" sh "$MODPATH/customize.sh" || abort "安装钩子失败"
+ui_print "- DSH Chroot 安装完成（$MODID）"
+exit 0

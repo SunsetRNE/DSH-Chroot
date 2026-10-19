@@ -58,6 +58,13 @@
   - **顺带修掉一个真机必炸的旧 bug**：入口脚本把 `${DSH_PATH_OVERRIDE:-}` 写成了字面量 `@@{DSH_PATH_OVERRIDE:-}`，
     在设备上（没有该测试变量）`set -u` 直接报 `parameter not set`；测试因为总是导出它而全绿。记入 [pitfalls A22](docs/pitfalls.md)
   - 变异证据：把 alpha 的 `safe_mode` 改成 0 → `FAIL 94/95`；真机自检脚本扩到 95 条（**真机 95/95 待重跑**）
+- **模块打包（引导器包，2026-10-18）**：`tools/build-module.py` + [docs/module.md](docs/module.md)
+  - 包内 11 条目：`module.prop` / `manifest.json` / 开机钩子 / 安装与卸载钩子 / `META-INF` / `bin/{service.sh,dsh-ctl}` / `lib/semver-gate.sh`
+  - **16,896 字节**（解压 40,308），远低于 ADR-024 的 1 MB 上限；payload 仍不进 zip
+  - 确定性 zip（排序 / 固定 mtime / 固定权限）→ 同输入同 sha256
+  - `--selftest` 19 条断言：布局 / 权限 / 无 `@@{...}` 残留 / **安装模拟**（customize.sh → DSH_ROOT）/ 安装后 status / **拒绝降级** / 两次构建字节相同
+  - 安装期逻辑在 `install.sh`（`customize.sh` 只转交）：拒绝降级（ADR-018）+ 落壳 + 只建空目录（ADR-017 红线）
+  - 卸载钩子第一版**只停服务 + 打印残留、不删数据**（ADR-017 决定 C 第 4 条：时机未确认前不删）
 
-> 尚无模块包。此版本将随首个 Release 发布。
+> 尚无 Release。开发包可用 `python3 tools/gen-version.py --draft && python3 tools/build-module.py` 生成（`build/` 不进仓库）。
 

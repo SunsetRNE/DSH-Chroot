@@ -38,6 +38,13 @@ jobs:
       - name: 版本真源契约（台账 / 拒绝类断言）
         run: python3 tools/test-versioning.py
 
+      # 模块包：< 1 MB、确定性；selftest 会模拟安装到临时 DSH_ROOT（ADR-024）
+      - name: 模块打包 + 安装模拟
+        run: |
+          python3 tools/build-module.py
+          python3 tools/build-module.py --check
+          python3 tools/build-module.py --selftest
+
       # 真机自检脚本必须由 lib + spec 生成，不许手改
       - name: 设备自检脚本与源保持一致
         run: python3 tools/build-device-selftest.py --check

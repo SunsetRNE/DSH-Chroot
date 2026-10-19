@@ -21,6 +21,7 @@
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | **版本闸门接线（ADR-026）** | ✅ 2026-10-18：`decide` 纯函数（19 条向量 · 5 实现 95/95）· `service.sh start` 前判定 · 低于 floor **回落 baked** · 新退出码 **50** · 壳契约 43 条（dash/mksh） |
+| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 11 条目 · **16,896 字节**（解压 40,308）· 确定性 + 安装模拟 **19/19**（[docs/module.md](./module.md)） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
@@ -67,8 +68,9 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 8 | [docs/threat-model.md](./threat-model.md) | **威胁模型（归拢）**：资产 / 对手 / 六条边界 / 威胁↔ADR 对账 / **不设防声明** / 开着的口子 |
 | 9 | [docs/recovery.md](./recovery.md) | **刷机前的证据与回滚预案**（ARB 警告 / 包形态 / 抽分区 / 决策树） |
 | 10 | [docs/versioning.md](./versioning.md) | **版本号与 module.prop 规范**（四位 version / versionCode / managedFeatures 真实语义 / 单一真源 / 命名分工） |
-| 11 | [docs/payload.md](./payload.md) | **payload 规范**：两件套 / 归档布局 / 字段 / 确定性构建 / 四道校验链 |
-| 11 | [baseline/manifest.example.json](../baseline/manifest.example.json) · [baseline/module.prop.example](../baseline/module.prop.example) | 闸门 manifest 模板与 module.prop 生成结果 |
+| 11 | [docs/payload.md](./payload.md) | **payload 规范**：两层 / 四个文件 / 字段 / 确定性构建 / 五道校验链 |
+| 12 | [docs/module.md](./module.md) | **模块包规范**：包内布局 / 安装与开机路径 / 卸载策略 / 构建与自测 |
+| 13 | [baseline/manifest.example.json](../baseline/manifest.example.json) · [baseline/module.prop.example](../baseline/module.prop.example) | 闸门 manifest 模板、module.prop 生成结果、模块包钩子模板 |
 
 ---
 
@@ -214,7 +216,8 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）
 │   ├── versioning.md               # 版本号与 module.prop 规范
-│   └── payload.md                  # payload 规范（ADR-024 的实现面）
+│   ├── payload.md                  # payload 规范（ADR-024 的实现面）
+│   └── module.md                   # 模块包规范（布局 / 安装 / 开机 / 卸载 / 构建）
 ├── spec/
 │   └── gate-vectors.json           # ★ 版本闸门的唯一规格（三份实现都对着它跑）
 ├── lib/
@@ -224,7 +227,8 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── dsh.env                     # ★ DSH 基线参数（floor / recommended / node_floor）
 │   ├── bake-ledger.json            # ★ 烘焙台账（只追加）：seq <-> baked；第 4 位与 manifest.baked 的唯一来源
 │   ├── manifest.example.json       # 版本闸门 manifest 模板（生成器的输入）
-│   └── module.prop.example         # module.prop 生成后的样子
+│   ├── module.prop.example         # module.prop 生成后的样子
+│   └── module/                     # 模块包内的安装 / 开机 / 卸载钩子（模板）
 └── tools/
     ├── version.env                 # ★ 模块身份 + version 前三位 + versionCode（不写 DSH 版本）
     ├── gen-version.py              # 由三个真源生成 module.prop / manifest.json / APK 版本字段（fail-closed）
@@ -234,6 +238,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
     ├── test-service.sh             # 壳的契约测试（幂等 / 环境钉死 / 先停后换 / 退出码）
     ├── test-dsh-ctl.sh             # 入口的契约测试（参数校验 / 审计 / 透传 / cgroup 如实报告）
     ├── build-payload.py            # payload 打包器（确定性 tar.gz + payload.json + 校验 + 自测）
+    ├── build-module.py             # 模块 zip 打包器（< 1 MB · 确定性 · 安装模拟自测）
     ├── verify-pty.sh               # 容器内 PTY 可用性验证（双通道）
     └── compare-firmware.py         # 两份固件包内核侧镜像比对
 ```

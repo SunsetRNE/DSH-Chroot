@@ -76,6 +76,7 @@
 python3 tools/check-gate.py             # 三份实现 × 一张向量表（版本比较写错是静默错误，这里不靠自觉）
 python3 tools/test-versioning.py        # 版本真源契约：台账派生 / 拒绝类断言 / 漂移检测
 python3 tools/gen-version.py --draft    # 从三个真源生成 build/（发布前去掉 --draft，占位会直接报错）
+python3 tools/build-module.py           # 打模块 zip（< 1 MB、确定性；见 docs/module.md）
 ```
 
 需要说明的一点：版本比较是本项目**唯一写错会静默出错**的地方 —— `"0.2.1-rc.1" < "0.2.0-rc.2"` 在字典序上成立，
