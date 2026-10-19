@@ -9,7 +9,7 @@ payload（Node 层 + DSH 层）永远不进 zip，首启由 service.sh bootstrap
     python3 tools/build-module.py --check    # 与磁盘上的包逐字节比对（CI 用），漂移 exit 1
     python3 tools/build-module.py --selftest # 布局 / 权限 / 占位符 / 安装模拟 / 降级拒绝 / 确定性
 
-前置：先跑 python3 tools/gen-version.py --draft（需要 build/module.prop 与 build/manifest.json）。
+前置：先跑 python3 tools/gen-version.py（发布模式；需要 build/module.prop 与 build/manifest.json）。
 
 退出码: 0 成功；1 漂移（--check）；2 输入不合规
 """

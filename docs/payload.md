@@ -36,8 +36,8 @@ dsh-<baked>.tar.gz     + dsh.json
 |---|---|---|
 | `schema` | `1` | 不认识就拒绝 |
 | `layer` | `node` | 层种类 |
-| `version` | `24.19.0` | 精确版本（不写范围） |
-| `pnpm` | `11.0.0` | 同上 |
+| `version` | `24.21.0` | 精确版本（不写范围） |
+| `pnpm` | `11.28.5` | 同上 |
 | `sha256` / `size` | … | 仅旁挂清单有 |
 
 **dsh.json**
@@ -59,11 +59,20 @@ dsh-<baked>.tar.gz     + dsh.json
 同样输入 → 同一个 sha256。
 
 ```bash
-python3 tools/build-payload.py --kind node --version 24.19.0 --stage /path/to/node-stage
+python3 tools/build-payload.py --kind node --version 24.21.0 --pnpm 11.28.5 --stage /path/to/node-stage
 python3 tools/build-payload.py --kind dsh  --baked 0.2.0-rc.2 --stage /path/to/dsh-stage
 python3 tools/build-payload.py --verify build/dsh-0.2.0-rc.2.tar.gz --manifest build/dsh.json
 python3 tools/build-payload.py --selftest        # 两层各自：确定性 + 校验 + 篡改检测
 ```
+
+**本基线实际产物（2026-10-19，已独立重建一次、两次构建逐字节相同）**：
+
+| 层 | 归档 | 压缩后 | 解压后 | 内容 |
+|---|---|---|---|---|
+| node | `node-24.21.0.tar.gz` | 60.4 MiB | 227 MiB | Node 官方 tarball + pnpm 11.28.5 |
+| dsh | `dsh-0.2.0-rc.2.tar.gz` | 116.9 MiB | 439 MiB | 13,382 个文件（含全部依赖） |
+
+两层的 sha256 以 `build/{node,dsh}.json` 与 [manifest.example.json](../baseline/manifest.example.json) 的 `layers` 为准（同一组值，不在这里重复）。
 
 层内必需项：node 层要有 `bin/node`；dsh 层要有 `dsh/package.json`。缺了构建器直接拒绝。
 
@@ -95,8 +104,20 @@ python3 tools/build-payload.py --selftest        # 两层各自：确定性 + �
 - 退出码沿用 ADR-013：`30` = 层缺失 / 校验失败 / 空间不足 / 解包失败；`40` = 切换失败；`50` = 版本闸门拒绝启动（ADR-026）。
 - 失败时 **`active` 指针保持不动**；Node 层已成功切换而 DSH 层失败时，Node 层保留（下次复用）。
 
-## 8. 仍未定的两处
+## 8. 基线钉死与仍不包含的东西（2026-10-19）
 
-1. **`rootfs/` 进不进 payload**：当前规范不含 rootfs —— 容器根文件系统由 `chroot-distro` 负责。
-   若不接受"首次还要跑一次 `chroot-distro download ubuntu`"，就得把 `ubuntu-base-24.04.5-arm64` 的 URL + sha256 钉进 bootstrap。
-2. **Node / pnpm 精确版本**：`24.19.0` / `11.0.0` 仍是占位口径，打包前按 [baseline.md](./baseline.md) 复核 libc 依赖后钉死。
+**已钉死**（取 ADR-011 的上游 pin，不是"容器里顺手装的那个"）：
+
+| 组件 | 值 | 来源 / 校验 |
+|---|---|---|
+| Node | **24.21.0**（linux-arm64） | 官方 tarball，sha256 `724282c3…e5d5` |
+| npm | **11.19.0** | 随 Node 24.21.0 |
+| pnpm | **11.28.5** | npm registry，sha512 `SEVj0wtM…Nng==`；上游 `packageManager` pin |
+
+开发容器里是 Node 24.19.0 / pnpm 10.34.5（DSHA 自带）—— 那是**验证环境**，不是烘焙值。
+Node 24.x 的 ABI 在同一 major 内不变；`node-pty` 的 `linux-arm64` 预编译在 24.21.0 上已实测可 `pty.spawn`。
+
+**仍不包含**：
+
+1. **rootfs**：容器根文件系统由 `chroot-distro` 负责，payload 不含 Ubuntu rootfs —— 首次仍需 `chroot-distro download ubuntu`。
+   要"刷完即用"得另做一次决定（把 `ubuntu-base` 的 URL + sha256 钉进 bootstrap），不在本版范围内。

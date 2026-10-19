@@ -9,9 +9,9 @@
 | 组件 | 版本 | 为什么是它 | 状态 |
 |---|---|---|---|
 | 容器发行版 | **Ubuntu 24.04 LTS (noble) arm64** | DSHA 已验证的组合；`node-pty` 只有 glibc 预编译 | 【已验证】DSHA README 明示其离线 rootfs 是 Ubuntu 24.04 arm64 |
-| Node.js | **24.x（钉死到具体小版本）** | 官方 `linux-arm64` 二进制即 glibc，可完全 pin，不依赖发行版仓库 | 【已验证】DSHA 容器内 `node -v` = v24.19.0 |
-| npm | 11.x（随 Node 自带） | 只需用于一次性安装/升级 | 【已验证】11.17.0 |
-| pnpm | **10.x** | DSH **运行时真的在用 pnpm**（插件依赖安装） | 【已验证】10.34.5；`lib/bin.js`、plugin bundle 中均出现 |
+| Node.js | **24.21.0（烘焙值）** | 官方 `linux-arm64` 二进制即 glibc，可完全 pin；与上游 `primary-runtime` pin 对齐（ADR-011） | 【已验证】官方 tarball sha256；`node -v` = v24.21.0；开发容器 24.19.0 只是验证环境 |
+| npm | 11.19.0（随 Node 24.21.0） | 只需用于一次性安装/升级 | 【已验证】`npm -v` = 11.19.0 |
+| pnpm | **11.28.5** | DSH **运行时真的在用 pnpm**；与上游 `packageManager` pin 对齐（10→11 横跨 `allowBuilds` / `strictDepBuilds` 语义） | 【已验证】registry sha512；`pnpm -v` = 11.28.5 |
 | DSH | **@deepseek-ai/dsh@0.2.0-rc.2** | DSHA 内跑的就是它；本容器安装的也是它 | 【已验证】`package.json` + `APP_VERSION=…-dsh0.2.0-rc.2` |
 | 容器运行时 | chroot-distro 模块（release 2.1.0 骨架 + main 分支脚本） | 原厂内核 + LKM 即可运行 | 【已验证】见 research §3.1 |
 | 容器路径 | `/data/local/chroot-distro/<distro>/` | chroot-distro 默认 | 【已验证】源码常量 |
@@ -122,23 +122,23 @@ dsh-<baked>.tar.gz  + dsh.json      # @deepseek-ai/dsh 完整树 + bin wrapper
 | 件 | 大小 | 内容 | 更新频率 |
 |---|---|---|---|
 | 模块 zip | KB 级 | CLI + 壳 + manifest + wrapper | 逻辑更新 / floor 抬高 |
-| payload 包 | ~1 GB 级 | Ubuntu rootfs + Node + pnpm + DSH 基线 | baked 版本变化 |
+| payload 包 | 两层合计 ≈180 MiB（压缩后） | Node + pnpm + DSH 基线（**不含 rootfs**） | Node 变 / baked 变 |
 | state 目录 | 用户自己的 | `~/.dsh` + pnpm store | **永不覆盖** |
 
 模块首启：`base/` 存在且 hash 匹配 → 直接用；否则找 payload（预置 `/sdcard/Download/` 或下载）→ 解包 → 校验 → 落盘。
 
 ---
 
-## 6. 复现步骤（大纲，尚未实施）
+## 6. 复现步骤（2026-10-19 已按此烘出一版；产物见 payload.md §4）
 
 1. 建 Ubuntu 24.04 chroot（`chroot-distro install ubuntu` 选 noble）
-2. 容器内装 Node 24（官方 arm64 二进制，钉小版本）+ **pnpm 11.x**（≥ 上游 pin `11.28.5`，见 ADR-011 决定 A.4；本容器当前是 10.34.5，**不要照抄**）
-3. `npm i -g @deepseek-ai/dsh@0.2.0-rc.2 --prefix /opt/dsh/base/dsh-0.2.0-rc.2`
+2. 容器内装 **Node 24.21.0**（官方 arm64 二进制）+ **pnpm 11.28.5**（上游 pin，见 ADR-011 决定 A.4；开发容器是 24.19.0 / 10.34.5，**不要照抄**）
+3. `npm i -g @deepseek-ai/dsh@0.2.0-rc.2 --prefix <stage>`（或复用已按本基线验证过的安装树）
 4. **验证三件事**（任何一条不过就不要继续）：
    - [x] `node-pty` 能起 PTY（**✅ 2026-10 于 proot 容器实测通过**；chroot 里用 `tools/verify-pty.sh` 复验）
-   - [ ] `dsh --version` / `dsh web --port 0` 能跑起来
+   - [x] `dsh --version` = `0.2.0-rc.2`（2026-10-19 在 Node 24.21.0 下实测）；`dsh web --port 0` 待 runtime adapter
    - [ ] 容器内 DNS 与 TLS 正常（`/etc/resolv.conf`、CA bundle）
-5. 打 payload：`tar -czf`（gzip；⛔ 不用 zstd —— 设备侧与容器侧都没有，见 ADR-013 决定 C）+ 生成 `payload.json`（每层 sha256）
+5. 打 payload：`tools/build-payload.py --kind node|dsh`（确定性 gzip；⛔ 不用 zstd，见 ADR-013 决定 C），每层出 `<kind>.json`（sha256 + size）
 6. 写壳（manifest + wrapper + dsh-update + service.sh + broker.py）
 7. 端到端：解包 → 校验 → 起 DSH → 壳发布端口 → 平板访问（记得 `--trusted-host`）
 

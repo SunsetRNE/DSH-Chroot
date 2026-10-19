@@ -28,11 +28,11 @@ jobs:
       - name: 版本闸门三实现对照
         run: python3 tools/check-gate.py
 
-      # 产物与真源同步（payload 的 layer sha256 尚未有真值，所以用 --draft）
+      # 产物与真源同步：payload 的 layer sha256 已是真值，必须用发布模式（任何占位都 exit 2）
       - name: 生成产物并校验漂移
         run: |
-          python3 tools/gen-version.py --draft
-          python3 tools/gen-version.py --check --draft
+          python3 tools/gen-version.py
+          python3 tools/gen-version.py --check
 
       # 版本真源契约：台账是第 4 位与 baked 的唯一来源（ADR-025）
       - name: 版本真源契约（台账 / 拒绝类断言）

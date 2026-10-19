@@ -1207,6 +1207,7 @@ payload 是**独立产物**，有两种形态：Release 资产 / 本地文件。
 
 - `dsh-ctl bootstrap --offline`：**禁止 ②**，只认本地。
 - payload 必须自带 `payload.json`：`{baked, node, pnpm, sha256, size}`；解压后还要拿容器内实际 `dsh --version` 与 `baked` 对账（对不上就拒绝 —— 防"层与 manifest 说的不是一回事"）。
+  > 2026-10-18 两层裁决后：改为**每层旁挂清单** `node.json` / `dsh.json`（ADR-025 同期落地），见 [payload.md](./payload.md) §2-§3；本条其余语义不变。
 - **不做增量**（见 [pitfalls B9](./pitfalls.md)）：整包替换更简单、更好回滚。
 
 ### 决定 C：四层分工

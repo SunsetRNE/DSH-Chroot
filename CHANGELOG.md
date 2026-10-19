@@ -2,6 +2,19 @@
 
 版本号与 `module.prop` 的 `version` 一致（[规范](docs/versioning.md)）。`update.json` 的 `changelog` 指向本文件。
 
+## v1.0.1.1（未发布）
+
+- **payload 首次烘焙（2026-10-19）**：Node **24.21.0**（npm 11.19.0）+ pnpm **11.28.5** / DSH **0.2.0-rc.2**
+  - `node-24.21.0.tar.gz` 60.4 MiB（解压 227 MiB）· sha256 `168d5988…d0d606`
+  - `dsh-0.2.0-rc.2.tar.gz` 116.9 MiB（解压 439 MiB / 13,382 文件）· sha256 `72d821ca…5ba503`
+  - 两层各自**独立重建一次**，sha256 逐字节相同 —— 确定性是量出来的，不是声称的
+  - 解包后实测：`bin/dsh --version` = `0.2.0-rc.2`；`node-pty` 在新 Node 上 `pty.spawn` 返回 `PTY_OK`
+- `baseline/manifest.example.json`：`layers` 的 `REPLACE_ME` → 真实 sha256；`pnpm_floor` 10.0.0 → 11.0.0
+- 版本 `1.0.0.1` → `1.0.1.1`（同一 baked 重打层 → 补丁位 +1）· `versionCode` 1 → 2（第 2 次对外变更）
+- `gen-version.py` 从 `--draft` 转为**发布模式**（CI 同步）：任何 `REPLACE_ME` 再出现都 exit 2
+- 文档：payload §3/§4/§8 钉死 Node/pnpm 与实测体积；baseline §1/§5/§6、guide 进度表、versioning/module/README 的 `--draft` 说明同步
+- **仍未做**：`runtime_start` 的 real 分支（bind 两层 + 起 `dsh web` + 解析端口）→ payload 就位后 `start` 仍报 30
+
 ## v1.0.0.1（未发布）
 
 - 模块身份定稿：`id=Zodiac-Quill-Saga` · `name=DSH Chroot` · 仓库 `DSH-Chroot`
@@ -68,5 +81,5 @@
     staging 目录因此全是空的。已删掉该文件并加两道校验，记入 [pitfalls A23](docs/pitfalls.md)
   - 卸载钩子第一版**只停服务 + 打印残留、不删数据**（ADR-017 决定 C 第 4 条：时机未确认前不删）
 
-> 尚无 Release。开发包可用 `python3 tools/gen-version.py --draft && python3 tools/build-module.py` 生成（`build/` 不进仓库）。
+> 尚无 Release。开发包可用 `python3 tools/gen-version.py && python3 tools/build-module.py` 生成（发布模式；`build/` 不进仓库）。
 

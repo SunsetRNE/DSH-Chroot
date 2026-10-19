@@ -1,6 +1,6 @@
 # DSH 容器化替代 DSHA —— 项目指引
 
-> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026））。
+> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ 模块 **1.0.1.1**）。
 > 阶段二（自定义内核 / Droidspaces）已按你的决定裁掉，仅在 `docs/pitfalls.md` 里留作"进阶与触发条件"。
 > 本文档集是给"未来的你"看的：过一段时间回来，只读本文件就能恢复全部上下文。
 
@@ -17,27 +17,30 @@
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
 | **命门：容器内 PTY** | ✅ **完全闭环**（2026-10-18）：proot 实测（§9.1）+ **真 chroot 复验**（§9.1.1，chroot-distro 2.1.0 + ubuntu noble，`/dev/pts/0`） |
-| **壳骨架**（service.sh + dsh-ctl） | ✅ 2026-10-18：六条契约 + 退出码 + 两层 bootstrap（Node 层复用）· 契约测试 32 + 11 条，dash/mksh 双端与 CI 全绿 |
+| **壳骨架**（service.sh + dsh-ctl） | ✅ 2026-10-18：六条契约 + 退出码 + 两层 bootstrap（Node 层复用）· 契约测试 43 + 11 条，dash/mksh 双端与 CI 全绿 |
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | **版本闸门接线（ADR-026）** | ✅ 2026-10-18：`decide` 纯函数（19 条向量 · 5 实现 95/95）· `service.sh start` 前判定 · 低于 floor **回落 baked** · 新退出码 **50** · 壳契约 43 条（dash/mksh） |
 | **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 10 条目 · 确定性 + 安装模拟 **20/20**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy） |
+| **payload 首烘（两层）** | ✅ 2026-10-19：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.0-rc.2.tar.gz` 116.9 MiB；独立重建 sha256 相同；**真实归档离线自举 38 s → status ok (baked)**（[payload.md](./payload.md) §4） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
 
-0. ~~在 [tools/version.env](../tools/version.env) 里定下三项占位并生成产物~~ ✅ **已完成（2026-10-17）**：
-   三项已定稿、生成器已收口（占位一律 fail-closed，绝不再进产物）。现在跑 `python3 tools/gen-version.py --draft` 出 `build/`，
-   `--draft` 是因为 payload 的层 `sha256` 必须真正打过包才有值；不带 `--draft` 时生成器会因这唯一的占位报错 —— 这正是我们要的行为。
-1. ~~版本闸门：一张向量表 + 三份实现~~ ✅ **已完成（2026-10-17）**：[spec/gate-vectors.json](../spec/gate-vectors.json)（76 条向量）·
-   Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；三个变异测试证明这道检查**会红**。
-   ✅ **真机已闭环（2026-10-17）**：设备是 **mksh R59**；首轮跑出**方言坑**（mksh 里 `${s%%|*}` 返回空串 → 向量行全部解析失败，
-   而实现本身是对的），修成 IFS 拆分后 mksh / dash / bash 三端一律 `RESULT ok 76/76`。
-   → 坑记在 [pitfalls A20](./pitfalls.md)；真机自检脚本 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh) 保留，以后每次改闸门都能一次性验三端。
-2. （可选，最便宜）在真正的 chroot 容器里跑 `sh tools/verify-pty.sh`，把 PTY 结论闭环；
-3. **写壳的骨架**：`manifest.json` + `dsh-update`（闸门已就绪，直接 `source lib/semver-gate.sh`）+ `service.sh`（flock / setsid / 环境钉死 / `DSH_HOME` 分离）+ `broker.py`（UDS 控制面 + 端口发布 + 反代 + providers 列表 + caps 扫描）；
-3. 挂载按 **ADR-009**：`bind(ro)` + `active` 指针，**不用 overlayfs**；
-4. 再往后是 payload 打包（Ubuntu 24.04 + Node 24 + **pnpm 11.x** + DSH 基线；压缩用 **gzip**，⛔ 不用 zstd —— ADR-013 决定 C）。
+0. ~~版本真源 / 生成器 / 占位收口~~ ✅ **已完成（2026-10-17）**：payload 的层 `sha256` 也已是真值（2026-10-19），
+   现在生成走 `python3 tools/gen-version.py`（**不带 `--draft`**）；`--draft` 只在真的还有占位时当逃生口。
+1. ~~版本闸门：一张向量表 + 三份实现~~ ✅ **已完成（2026-10-17）**：[spec/gate-vectors.json](../spec/gate-vectors.json)（现 95 条向量）·
+   Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；变异测试证明这道检查**会红**。
+   真机自检脚本 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh) 保留（真机 76/95 待按新版重跑）。
+2. ~~壳骨架（service.sh + dsh-ctl）~~ ✅ **已完成（2026-10-18）**：六条契约 + 两层 bootstrap + 版本闸门接线；契约 43 + 11 条（dash/mksh）。
+3. ~~模块打包（引导器 < 1 MB）~~ ✅ **已完成（2026-10-18）**：10 条目 · 安装模拟 20/20 · 当前 **1.0.1.1 / versionCode 2**。
+4. ~~payload 首烘~~ ✅ **已完成（2026-10-19）**：Node **24.21.0** + pnpm **11.28.5** + DSH **0.2.0-rc.2**；
+   两层 ≈177 MiB（解压 666 MiB）；真实归档离线自举 **38 s**，`status` 报 `ok (baked)`。
+5. **下一步：`runtime_start` 的 real 分支** —— bind 两层进 chroot → `dsh web --port 0` → 从 stdout 抓
+   `http://127.0.0.1:<port>/?token=…` → 原子写 `run/dsh.json`。做完这一步，`start` 才算真的把 DSH 跑起来
+   （现在 real 分支会如实报 30，fake 分支只用于契约测试）。
+6. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.1.1** → 投递 payload → `bootstrap --offline` →
+   `status` 应显示 node/layer/version 全 ok，`start` 仍报 30（等第 5 步）。
 
 **一句话记住三条硬约束**：① 只做 `local` + `lan`，公网不碰；② 与 DSHA **并存但绝不共用 `DSH_HOME`**；③ 固件只抽**内核侧四件套**，永不整包刷、永不恢复 `data`。
 
@@ -129,8 +132,8 @@ L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017�
 |---|---|---|---|
 | 容器运行时 | **chroot-distro 模块** | 唯一"现在就能用原厂内核 + LKM 跑起来"的容器模块；不碰内核 | research §3 |
 | 发行版 | **Ubuntu 24.04 (glibc)** | `node-pty` **只有 glibc 预编译**，`cua-driver` **没有 musl 包**；且这是 DSHA 已验证的组合 | baseline §2 |
-| Node | **24.x（钉死小版本）** | 官方 linux-arm64 二进制即 glibc，可完全 pin，不依赖发行版仓库 | baseline §1 |
-| 包管理器 | **pnpm 11.x，随模块内置**（构建期打包、安装期解压） | DSH 运行时真的在用 pnpm；**不内置就装不了插件**；且单文件 exe 不能当 node 跑 pnpm | baseline §1、ADR-011 |
+| Node | **24.21.0（烘焙值）** | 官方 linux-arm64 二进制即 glibc，可完全 pin；24.x 同一 major 内 ABI 不变 | baseline §1 |
+| 包管理器 | **pnpm 11.28.5，随模块内置**（构建期打包、安装期解压） | DSH 运行时真的在用 pnpm；**不内置就装不了插件**；且单文件 exe 不能当 node 跑 pnpm | baseline §1、ADR-011 |
 | AI 写插件 | **四层约束；批准在容器外**（试衣间不落盘 + 人闸门） | 上游的 approval / `node:vm` 沙箱 / 插件管理器**都不构成安全边界**，且审批是"声明式"的 | ADR-011 |
 | DSH 基线 | **0.2.0-rc.2** | 当前 DSHA 内跑的就是它（`APP_VERSION=…-dsh0.2.0-rc.2`） | baseline §1 |
 | 内置基线的通道 | **只追 RC，alpha 不碰** | rc = 上游宣告的候选发布，alpha = 它的开发线；`floor` 不可降，把 alpha 钉进去就回不了头 | ADR-022 |
@@ -237,7 +240,7 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
     ├── check-gate.py               # 三份实现 × 一张表：防漂移检查（CI 入口）
     ├── test-service.sh             # 壳的契约测试（幂等 / 环境钉死 / 先停后换 / 退出码）
     ├── test-dsh-ctl.sh             # 入口的契约测试（参数校验 / 审计 / 透传 / cgroup 如实报告）
-    ├── build-payload.py            # payload 打包器（确定性 tar.gz + payload.json + 校验 + 自测）
+    ├── build-payload.py            # payload 打包器（两层 · 确定性 tar.gz + 每层清单 + 校验 + 自测）
     ├── build-module.py             # 模块 zip 打包器（< 1 MB · 确定性 · 安装模拟自测）
     ├── verify-pty.sh               # 容器内 PTY 可用性验证（双通道）
     └── compare-firmware.py         # 两份固件包内核侧镜像比对

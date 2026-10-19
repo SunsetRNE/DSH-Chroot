@@ -146,9 +146,9 @@ semver 的序是**稠密**的 —— 任意两个版本之间都能再插进一�
 | [update.json](../update.json) | **手写但与真源强校验**（提交在仓库根：Root 管理器从这里检查更新；`version` / `versionCode` 必须与生成结果一致） |
 
 ```bash
-python3 tools/gen-version.py --draft    # 生成到 build/（草稿：payload 的层 sha256 还没真值时必须带）
-python3 tools/gen-version.py            # release 模式：任何占位都报错退出（发布前必须能过）
-python3 tools/gen-version.py --check    # 只校验生成物是否与真源同步（CI / 提交前用；可带 --draft）
+python3 tools/gen-version.py            # 发布模式：生成到 build/；任何占位都报错退出
+python3 tools/gen-version.py --check    # 只校验生成物是否与真源同步（CI / 提交前用）
+python3 tools/gen-version.py --draft    # 逃生口：真的还有未填项时只看草稿（payload sha256 已是真值，平时不用）
 ```
 
 **七条硬性行为**（已实测；[tools/test-versioning.py](../tools/test-versioning.py) 用 20 条断言守着）：
@@ -187,7 +187,7 @@ APK 侧接入方式（二选一）：
 生成后的样子见 [baseline/module.prop.example](../baseline/module.prop.example)。
 
 **2026-10-17 定稿的三项**：`MODULE_ID=Zodiac-Quill-Saga` · `MODULE_NAME=DSH Chroot` · 首个烘焙 `seq=1` / `baked=0.2.0-rc.2`（记在台账里，不写在 version.env）。
-现在唯一还空着的是 payload 层的 `sha256`（必须真打过包才有），所以生成走 `--draft`；其余任何占位都会被生成器拒绝。
+payload 层的 `sha256` 也已在 2026-10-19 填成真值（`node-24.21.0` / `dsh-0.2.0-rc.2`）；现在生成走**发布模式**，任何占位（包括 `REPLACE_ME`）都会被拒绝。
 
 ---
 
@@ -327,7 +327,7 @@ verdict = ok | deny；safe_mode = 0 | 1
 ```bash
 # 编辑 baseline/bake-ledger.json，在 bakes 末尾追加：
 #   { "seq": 2, "baked": "0.2.1-rc.2", "date": "2026-10-20", "note": "上游 rc 修了 X" }
-python3 tools/gen-version.py --draft     # version 第 4 位自动变成 2 → 1.0.0.2
+python3 tools/gen-version.py            # version 第 4 位自动变成 2（当前补丁位下 → 1.0.1.2）
 ```
 
 **回滚也记一条账**：把一份更旧的 DSH 重新烘进 payload 同样是一次烘焙 —— `seq` 继续 +1，`baked` 写回旧版本。

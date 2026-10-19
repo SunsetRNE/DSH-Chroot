@@ -73,7 +73,7 @@ init → KernelSU/Magisk → /data/adb/modules/<id>/service.sh（钩子）
 ## 5. 构建
 
 ```bash
-python3 tools/gen-version.py --draft      # 先出 build/module.prop + build/manifest.json
+python3 tools/gen-version.py              # 先出 build/module.prop + build/manifest.json（发布模式）
 python3 tools/build-module.py             # -> build/DSH-Chroot-<version>.zip
 python3 tools/build-module.py --check     # 字节级漂移检查（CI 用）
 python3 tools/build-module.py --selftest  # 20 条断言
@@ -96,7 +96,7 @@ python3 tools/build-module.py --selftest  # 20 条断言
 ## 7. 已知边界
 
 1. `update-binary`（恢复模式路径）**未在真机验证**；管理器安装不经过它。它是为了让包保持标准模块格式。
-2. `manifest.layers` 在 payload 打包前是 `REPLACE_ME` —— 开发包能装、能 `status`，
-   但 `start` 会因缺层报 `30`（**这是期望行为**，不是装坏了）。
+2. payload 未投递时 `base/node` / `base/dsh-<baked>` 不存在 —— 模块能装、能 `status`，但 `start` 会因缺层报 `30`（**这是期望行为**）。
+   `manifest.layers` 自 **1.0.1.1** 起已是真实 sha256；运行时的层哈希校验（`guards.verify_layer_hashes`）尚未接线。
 3. 模块 `id` 发布后不可改（[versioning §8](./versioning.md)）。
 4. 包根出现 `install.sh` 会被判成 legacy 模块（A23）—— `build-module.py` 与 `--selftest` 都会拦。

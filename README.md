@@ -53,7 +53,7 @@
 |---|---|
 | `id` | `Zodiac-Quill-Saga` |
 | `name` | `DSH Chroot` |
-| `version` | `1.0.0.1`（第 4 位 = 烘焙台账序号，`1` = 第 1 次烘焙 = DSH `0.2.0-rc.2`；见 [versioning §2](docs/versioning.md)） |
+| `version` | `1.0.1.1`（第 4 位 = 烘焙台账序号，`1` = 第 1 次烘焙 = DSH `0.2.0-rc.2`；见 [versioning §2](docs/versioning.md)） |
 
 为什么 id 与仓库名不一样 → [docs/versioning.md §8](docs/versioning.md)（"越少人看见的字段，越可以讲风格"）。
 
@@ -75,7 +75,7 @@
 ```bash
 python3 tools/check-gate.py             # 三份实现 × 一张向量表（版本比较写错是静默错误，这里不靠自觉）
 python3 tools/test-versioning.py        # 版本真源契约：台账派生 / 拒绝类断言 / 漂移检测
-python3 tools/gen-version.py --draft    # 从三个真源生成 build/（发布前去掉 --draft，占位会直接报错）
+python3 tools/gen-version.py            # 从三个真源生成 build/（发布模式；占位会直接报错）
 python3 tools/build-module.py           # 打模块 zip（< 1 MB、确定性；见 docs/module.md）
 ```
 

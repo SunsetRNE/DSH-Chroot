@@ -18,7 +18,7 @@
     · gzip mtime=0 → 同样输入永远同一个 sha256，sha256 才有资格当版本锚点。
 
 用法:
-    python3 tools/build-payload.py --kind node --version 24.19.0 --stage DIR
+    python3 tools/build-payload.py --kind node --version 24.21.0 --pnpm 11.28.5 --stage DIR
     python3 tools/build-payload.py --kind dsh  --baked 0.2.0-rc.2 --stage DIR
     python3 tools/build-payload.py --verify FILE --manifest node.json
     python3 tools/build-payload.py --selftest
@@ -99,8 +99,11 @@ def build(kind, stage, out_dir, version, epoch=DEFAULT_EPOCH, pnpm=None):
 
     meta = {"schema": 1, "layer": kind, "created_at": epoch}
     if kind == "node":
+        # 清单不许替使用者猜 pnpm 版本：写错了就是「层与清单说的不是一回事」
+        if not pnpm:
+            die("node 层必须给 --pnpm（钉死的 pnpm 版本）")
         meta["version"] = version
-        meta["pnpm"] = pnpm or "11.0.0"
+        meta["pnpm"] = pnpm
     else:
         meta["baked"] = version
         meta["distro"] = {"name": "ubuntu", "release": "noble", "version": "24.04", "libc": "glibc"}
@@ -145,12 +148,13 @@ def build(kind, stage, out_dir, version, epoch=DEFAULT_EPOCH, pnpm=None):
     return tar_path, manifest_path, digest, size
 
 
-def verify(tar_path, manifest_path):
+def verify(tar_path, manifest_path, quiet=False):
     with open(manifest_path, encoding="utf-8") as fh:
         manifest = json.load(fh)
     kind = manifest.get("layer")
     if kind not in KINDS:
-        print("FAIL 清单里的 layer 不认识: %r" % (kind,), file=sys.stderr)
+        if not quiet:
+            print("FAIL 清单里的 layer 不认识: %r" % (kind,), file=sys.stderr)
         return 1
     digest = sha256_of(tar_path)
     problems = []
@@ -169,13 +173,15 @@ def verify(tar_path, manifest_path):
                     problems.append("meta 与清单不一致: %s（%s vs %s）"
                                     % (key, inner.get(key), manifest.get(key)))
     if problems:
-        for p in problems:
-            print("FAIL " + p, file=sys.stderr)
+        if not quiet:
+            for p in problems:
+                print("FAIL " + p, file=sys.stderr)
         return 1
-    print("一致: %s（%s=%s sha256=%s… size=%d）"
-          % (os.path.basename(tar_path), "baked" if kind == "dsh" else "version",
-             manifest.get("baked") or manifest.get("version"), digest[:12],
-             os.path.getsize(tar_path)))
+    if not quiet:
+        print("一致: %s（%s=%s sha256=%s… size=%d）"
+              % (os.path.basename(tar_path), "baked" if kind == "dsh" else "version",
+                 manifest.get("baked") or manifest.get("version"), digest[:12],
+                 os.path.getsize(tar_path)))
     return 0
 
 
@@ -199,11 +205,11 @@ def selftest():
     tmp = tempfile.mkdtemp(prefix="payload-selftest.")
     ok = True
     try:
-        for kind, version in (("node", "24.19.0"), ("dsh", "0.2.0-rc.2")):
+        for kind, version in (("node", "24.21.0"), ("dsh", "0.2.0-rc.2")):
             stage = _make_stage(tmp, kind)
             o1, o2 = os.path.join(tmp, "o1-" + kind), os.path.join(tmp, "o2-" + kind)
-            t1, m1, d1, _ = build(kind, stage, o1, version)
-            t2, m2, d2, _ = build(kind, stage, o2, version)
+            t1, m1, d1, _ = build(kind, stage, o1, version, pnpm="11.28.5")
+            t2, m2, d2, _ = build(kind, stage, o2, version, pnpm="11.28.5")
             if d1 != d2:
                 print("FAIL 非确定性（%s）：两次构建 sha256 不同" % kind)
                 ok = False
@@ -211,7 +217,7 @@ def selftest():
                 ok = False
             with open(t1, "ab") as fh:
                 fh.write(b"tamper")
-            if verify(t1, m1) == 0:
+            if verify(t1, m1, quiet=True) == 0:
                 print("FAIL 篡改后的包竟然通过了校验（%s）" % kind)
                 ok = False
         if ok:
@@ -245,7 +251,12 @@ def main(argv):
         die("需要 --kind 与 --stage（或 --selftest / --verify）")
 
     if args.kind == "node":
-        version = args.version or "24.19.0"
+        # 不替使用者猜版本：写错一个数字，manifest 就会指向一份不存在的层
+        if not args.version:
+            die("node 层必须给 --version（钉死的 Node 版本）")
+        if not args.pnpm:
+            die("node 层必须给 --pnpm（钉死的 pnpm 版本）")
+        version = args.version
     else:
         baked = ledger_baked()
         version = args.baked or baked
