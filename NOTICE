@@ -1,0 +1,32 @@
+DSH Chroot — third-party notices
+================================
+
+This repository contains code under more than one license. Each component
+keeps its own license; the summary below is a map, not a replacement for
+the license texts.
+
+Our own code
+------------
+MIT License — see LICENSE.
+Applies to all files outside vendor/.
+
+vendor/chroot-distro — GPL-3.0-or-later
+---------------------------------------
+Files:      vendor/chroot-distro/chroot-distro · module.prop
+License:    vendor/chroot-distro/LICENSE (GNU GPL v3)
+Source:     https://github.com/Magisk-Modules-Alt-Repo/chroot-distro
+Version:    2.1.0+main.20251218 (bundled unmodified; sha256 in SOURCE.json)
+
+The combined distribution contains this GPLv3 component. Redistribution
+of that component must comply with GPLv3 (license text + corresponding
+source); the MIT license of our own files is unaffected.
+
+vendor/dsh — MIT
+----------------
+Package:    @deepseek-ai/dsh 0.2.0-rc.2
+License:    vendor/dsh/package/LICENSE
+Source:     https://github.com/deepseek-ai/deepseek-harness
+Tag:        dsh-v0.2.0-rc.2 (commit 639ed015397290b3745d163aafe02ffee4aa3f84)
+
+The npm package is vendored with its dependency lockfile; node_modules is
+not committed (see vendor/README.md).

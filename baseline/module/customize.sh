@@ -43,13 +43,16 @@ if [ -f "$_old_prop" ]; then
     fi
 fi
 
-mkdir -p "$DSH_ROOT/lib" || _fail "建目录失败: $DSH_ROOT"
+mkdir -p "$DSH_ROOT/lib" "$DSH_ROOT/bin" "$DSH_ROOT/licenses/chroot-distro" || _fail "建目录失败: $DSH_ROOT"
 cp -f "$MODPATH/bin/service.sh" "$DSH_ROOT/service.sh" || _fail "复制 service.sh 失败"
 cp -f "$MODPATH/bin/dsh-ctl" "$DSH_ROOT/dsh-ctl" || _fail "复制 dsh-ctl 失败"
+cp -f "$MODPATH/bin/chroot-distro" "$DSH_ROOT/bin/chroot-distro" || _fail "复制 chroot-distro 失败"
 cp -f "$MODPATH/lib/semver-gate.sh" "$DSH_ROOT/lib/semver-gate.sh" || _fail "复制 semver-gate.sh 失败"
 cp -f "$MODPATH/manifest.json" "$DSH_ROOT/manifest.json" || _fail "复制 manifest.json 失败"
-chmod 0755 "$DSH_ROOT/service.sh" "$DSH_ROOT/dsh-ctl"
-chmod 0644 "$DSH_ROOT/lib/semver-gate.sh" "$DSH_ROOT/manifest.json"
+cp -f "$MODPATH/licenses/chroot-distro/LICENSE" "$DSH_ROOT/licenses/chroot-distro/LICENSE" || _fail "复制 chroot-distro LICENSE 失败"
+cp -f "$MODPATH/licenses/chroot-distro/SOURCE.json" "$DSH_ROOT/licenses/chroot-distro/SOURCE.json" || _fail "复制 chroot-distro SOURCE.json 失败"
+chmod 0755 "$DSH_ROOT/service.sh" "$DSH_ROOT/dsh-ctl" "$DSH_ROOT/bin/chroot-distro"
+chmod 0644 "$DSH_ROOT/lib/semver-gate.sh" "$DSH_ROOT/manifest.json" "$DSH_ROOT/licenses/chroot-distro/LICENSE" "$DSH_ROOT/licenses/chroot-distro/SOURCE.json"
 
 mkdir -p "$DSH_ROOT/state" "$DSH_ROOT/base" "$DSH_ROOT/inbox" "$DSH_ROOT/run" "$DSH_ROOT/log"
 chmod 0700 "$DSH_ROOT/run" "$DSH_ROOT/log" 2>/dev/null || true

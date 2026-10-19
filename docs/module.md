@@ -18,7 +18,10 @@
 | `META-INF/com/google/android/updater-script` | 标准占位 | 644 |
 | `bin/service.sh` | 壳的唯一执行者（ADR-013），安装时落到 `DSH_ROOT` | 755 |
 | `bin/dsh-ctl` | 唯一公开入口（ADR-019） | 755 |
+| `bin/chroot-distro` | 内置的 chroot-distro 引擎（GPLv3，原样，见 vendor/） | 755 |
 | `lib/semver-gate.sh` | 版本闸门的 POSIX sh 实现 | 644 |
+| `licenses/chroot-distro/LICENSE` | GPLv3 全文（内置组件合规） | 644 |
+| `licenses/chroot-distro/SOURCE.json` | 版本 / 来源 / sha256 | 644 |
 
 **为什么壳放在 `bin/` 而不是包根**：模块根目录会被管理器整体替换（更新），而 `/data/local/dsh/`
 是跨版本的运行域（state 在里面）。包根只留"安装期/开机期"的钩子，运行期文件由 `install.sh` 落盘。
@@ -38,7 +41,8 @@ KernelSU / Magisk 的安装器实际做的事：
 customize.sh（被安装器 source）
    ├─ 补可执行位：模块根 service.sh / uninstall.sh（安装器解包后统一设 0644）
    ├─ 拒绝降级（ADR-018：versionCode 严格小于已装 → abort）
-   ├─ 复制 bin/service.sh · bin/dsh-ctl · lib/semver-gate.sh · manifest.json → DSH_ROOT
+   ├─ 复制 bin/service.sh · bin/dsh-ctl · bin/chroot-distro · lib/semver-gate.sh · manifest.json → DSH_ROOT
+   ├─ 复制 licenses/chroot-distro/{LICENSE,SOURCE.json} → DSH_ROOT/licenses/
    ├─ chmod 0755 / 0644
    └─ 只建空目录 state/ base/ inbox/ run/ log（不碰已有数据，ADR-017 红线）
 ```
@@ -100,3 +104,5 @@ python3 tools/build-module.py --selftest  # 20 条断言
    `manifest.layers` 自 **1.0.1.1** 起已是真实 sha256；运行时的层哈希校验（`guards.verify_layer_hashes`）尚未接线。
 3. 模块 `id` 发布后不可改（[versioning §8](./versioning.md)）。
 4. 包根出现 `install.sh` 会被判成 legacy 模块（A23）—— `build-module.py` 与 `--selftest` 都会拦。
+5. 包内 `bin/chroot-distro` 是 **GPLv3** 组件（许可证全文与来源随包携带）；本仓库其余代码是 MIT。
+   分发含它的整包时，需按 GPLv3 履行该组件义务（见根目录 `NOTICE`）。

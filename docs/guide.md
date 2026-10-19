@@ -1,6 +1,6 @@
 # DSH 容器化替代 DSHA —— 项目指引
 
-> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ 模块 **1.0.1.1**）。
+> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ **vendor 基准线**（ADR-027）+ 模块 **1.0.2.1**）。
 > 阶段二（自定义内核 / Droidspaces）已按你的决定裁掉，仅在 `docs/pitfalls.md` 里留作"进阶与触发条件"。
 > 本文档集是给"未来的你"看的：过一段时间回来，只读本文件就能恢复全部上下文。
 
@@ -12,7 +12,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 设计决策 **ADR-001 ~ ADR-026** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
+| 设计决策 **ADR-001 ~ ADR-027** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
 | **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot`；版本真源拆三份（2026-10-18 → ADR-025）：`tools/version.env` / `baseline/dsh.env` / `baseline/bake-ledger.json`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
@@ -21,8 +21,9 @@
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | **版本闸门接线（ADR-026）** | ✅ 2026-10-18：`decide` 纯函数（19 条向量 · 5 实现 95/95）· `service.sh start` 前判定 · 低于 floor **回落 baked** · 新退出码 **50** · 壳契约 43 条（dash/mksh） |
-| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 10 条目 · 确定性 + 安装模拟 **20/20**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy） |
-| **payload 首烘（两层）** | ✅ 2026-10-19：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.0-rc.2.tar.gz` 116.9 MiB；独立重建 sha256 相同；**真实归档离线自举 38 s → status ok (baked)**（[payload.md](./payload.md) §4） |
+| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 确定性 + 安装模拟 **22/22**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy）。2026-10-19：13 条目，内置 `bin/chroot-distro`（GPLv3）+ 随包许可证 |
+| **vendor 基准线（ADR-027）** | ✅ 2026-10-19：chroot-distro 脚本原样 + GPLv3；DSH tarball + 538 包 shrinkwrap + 29,280 项 `tree.sha256`（两次独立安装树哈希相同）；`tools/vendor-check.py` 进 CI；仓库 MIT / 组件 GPLv3 双声明 |
+| **payload 首烘（两层）** | ✅ 2026-10-19：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.0-rc.2.tar.gz` 117.0 MiB（干净树 / 25,974 文件）；dsh 两次独立安装树哈希相同；**真实归档离线自举 89 s → status ok (baked)**（[payload.md](./payload.md) §4） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
@@ -33,13 +34,13 @@
    Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；变异测试证明这道检查**会红**。
    真机自检脚本 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh) 保留（真机 76/95 待按新版重跑）。
 2. ~~壳骨架（service.sh + dsh-ctl）~~ ✅ **已完成（2026-10-18）**：六条契约 + 两层 bootstrap + 版本闸门接线；契约 43 + 11 条（dash/mksh）。
-3. ~~模块打包（引导器 < 1 MB）~~ ✅ **已完成（2026-10-18）**：10 条目 · 安装模拟 20/20 · 当前 **1.0.1.1 / versionCode 2**。
+3. ~~模块打包（引导器 < 1 MB）~~ ✅ **已完成（2026-10-18）**：13 条目 · 安装模拟 22/22 · 当前 **1.0.2.1 / versionCode 3**（内置 chroot-distro，GPLv3 随包）。
 4. ~~payload 首烘~~ ✅ **已完成（2026-10-19）**：Node **24.21.0** + pnpm **11.28.5** + DSH **0.2.0-rc.2**；
-   两层 ≈177 MiB（解压 666 MiB）；真实归档离线自举 **38 s**，`status` 报 `ok (baked)`。
+   两层 ≈177 MiB（解压 ≈741 MiB）；真实归档离线自举 **89 s**（26k 文件），`status` 报 `ok (baked)`。
 5. **下一步：`runtime_start` 的 real 分支** —— bind 两层进 chroot → `dsh web --port 0` → 从 stdout 抓
    `http://127.0.0.1:<port>/?token=…` → 原子写 `run/dsh.json`。做完这一步，`start` 才算真的把 DSH 跑起来
    （现在 real 分支会如实报 30，fake 分支只用于契约测试）。
-6. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.1.1** → 投递 payload → `bootstrap --offline` →
+6. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.2.1** → 投递 `payload-1.0.2.1` → `bootstrap --offline` →
    `status` 应显示 node/layer/version 全 ok，`start` 仍报 30（等第 5 步）。
 
 **一句话记住三条硬约束**：① 只做 `local` + `lan`，公网不碰；② 与 DSHA **并存但绝不共用 `DSH_HOME`**；③ 固件只抽**内核侧四件套**，永不整包刷、永不恢复 `data`。
@@ -155,7 +156,7 @@ L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017�
 | 元模块实现 | **Magic Mount-rs** | 那是**模块挂载**（/system 域）的实现，**与本项目的容器分层无关**；容器分层走 bind(ro) + 指针，**不依赖内核 overlayfs**（ADR-009） |
 | 空间 / 内存 | 可用 582.94 GB / 22.62 GB 总内存 | 体积不是约束（所以"Alpine 更小"的卖点无效） |
 | DSHA | `com.dsh.client` / `com.dsh.clienu`，桥协议 3，APP_CODE 170 | **要被替代的对象**；但它的设备桥能力不能白丢（见 research §8） |
-| DSH 本体 | `@deepseek-ai/dsh@0.2.0-rc.2`，安装后 **439 MB** | **绝不能塞进模块 zip** |
+| DSH 本体 | `@deepseek-ai/dsh@0.2.0-rc.2`，干净安装树 **513 MB**（DSHA 内那棵 439 MB 被裁剪过） | **绝不能塞进模块 zip** |
 | 设备 shell 通道 | ✅ **已连接**（2026-10-16），经 root：`uid=0` + SELinux `u:r:ksu:s0`；`/data/adb` 可读 | 单条命令白名单：禁脚本 / 管道 / 重定向 / 变量 / 嵌套；`sh`、`app_process`（非受管）被拦 |
 | 系统版本串（只读） | `PJD110_16.0.10.501(CN01)`；OTA `PJD110_11.F.57_2570_202608111410`（构建 2026-08-11）；`ro.product.device=OP5929L1` | 与手上全量包同版本 → 回滚套件有效，设备一旦 OTA 更高版本即过期 |
 | 启动状态（只读） | `ro.boot.flash.locked=1` · `verifiedbootstate=green` · `veritymode=enforcing` | 抽分区 / 刷写前必须结合 ARB 再评估（见 recovery） |

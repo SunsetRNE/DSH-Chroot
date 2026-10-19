@@ -47,7 +47,10 @@ ENTRIES = [
     ("META-INF/com/google/android/updater-script", os.path.join(TPL, "updater-script"), 0o644),
     ("bin/service.sh", os.path.join(ROOT, "service.sh"), 0o755),
     ("bin/dsh-ctl", os.path.join(ROOT, "dsh-ctl"), 0o755),
+    ("bin/chroot-distro", os.path.join(ROOT, "vendor", "chroot-distro", "chroot-distro"), 0o755),
     ("lib/semver-gate.sh", os.path.join(ROOT, "lib", "semver-gate.sh"), 0o644),
+    ("licenses/chroot-distro/LICENSE", os.path.join(ROOT, "vendor", "chroot-distro", "LICENSE"), 0o644),
+    ("licenses/chroot-distro/SOURCE.json", os.path.join(ROOT, "vendor", "chroot-distro", "SOURCE.json"), 0o644),
 ]
 
 EXECUTABLES = [arc for arc, _, mode in ENTRIES if mode == 0o755]
@@ -248,7 +251,8 @@ def selftest():
                            capture_output=True, text=True)
         chk("安装模拟：customize.sh rc=0", r.returncode == 0,
             (r.stdout + r.stderr).strip()[:200])
-        for rel in ("service.sh", "dsh-ctl", "manifest.json", "lib/semver-gate.sh"):
+        for rel in ("service.sh", "dsh-ctl", "manifest.json", "lib/semver-gate.sh",
+                    "bin/chroot-distro", "licenses/chroot-distro/LICENSE"):
             chk("安装后存在 " + rel, os.path.exists(os.path.join(droot, rel)))
 
         r = subprocess.run([sh, os.path.join(droot, "service.sh"), "status"], env=env,

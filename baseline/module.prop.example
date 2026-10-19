@@ -11,8 +11,8 @@
 # version 第 4 位为 1（烘焙台账 seq 1 = DSH 0.2.0-rc.2），只增不减
 id=Zodiac-Quill-Saga
 name=DSH Chroot
-version=1.0.1.1
-versionCode=2
+version=1.0.2.1
+versionCode=3
 author=SunsetRNE
 description=DSH 的 Android root 模块：真 chroot（不是 proot）· 开机自启 + 版本闸门 + 局域网访问
 updateJson=https://raw.githubusercontent.com/SunsetRNE/DSH-Chroot/main/update.json

@@ -1386,6 +1386,25 @@ alpha / 非 rc 预发布 → `safe_mode=1`，但今天**没有"禁用全部插�
 
 ---
 
+## ADR-027 vendor 基准线与双许可证：外部依赖进仓库，大件不进 git  ← **本次决定**
+
+- **背景**：chroot-distro 与 DSH 上游变化都很快，而 payload 必须可复现。不能让“构建那天上游刚好是什么”决定产物，也不能把 439 MB 的 `node_modules` 塞进 git（GitHub 单文件上限 100 MB）。
+- **决定 A：vendor 最小必要资料**
+  - `vendor/chroot-distro/`：脚本 + `module.prop` + GPLv3 全文 + `SOURCE.json`（**原样**，90 KB）；
+  - `vendor/dsh/`：npm tarball（24 KB）+ 解包包体（20 文件）+ `npm-shrinkwrap.json`（538 包精确版本 + integrity）+ `tree.sha256`（29,280 项逐文件清单；两次独立安装树哈希相同）；
+  - `node_modules`（513 MB）与 payload tarball **不进 git**；大件仍走 `build/` 与 Release，sha256 写在 manifest。
+- **决定 B：许可证边界（双声明）**
+  - 仓库本体 **MIT**；`vendor/chroot-distro` 为 **GPL-3.0-or-later**；`vendor/dsh` 为 **MIT**；
+  - 根 `NOTICE` 写明“哪部分归哪个许可证”；分发含 chroot-distro 的整包时，该组件按 GPLv3 履行源码/许可证义务，我们自己的文件仍是 MIT；
+  - **不 fork** 脚本；若将来必须改，必须按 GPLv3 发布修改后的源码。
+- **决定 C：校验以 `tree.sha256` 为准**
+  - `npm-shrinkwrap.json` 是从**已验证安装树**生成的记录，不是 drop-in `npm ci`（原树是 global 安装，dev/optional 未齐）；
+  - 重建 DSH 层后必须跑 `tools/vendor-check.py --stage`；树哈希不一致就不发布。
+- **代价**：① 仓库多约 2.5 MB 的文本/小包；② 不能“一条 npm ci 重建”，必须用同一 npm 安装并核对树哈希；③ 许可证边界需要每次分发时保持 `NOTICE` / `LICENSE` 随包。
+- **重审触发**：① 要做完全离线构建 → 把 npm 缓存/tarball 也纳入 Release 资产；② 上游给出可 drop-in 的正式 lock → 换成标准 lock；③ 需要修改 chroot-distro → 按 GPLv3 发布 fork 源码。
+
+---
+
 ## 附：一条来自源码的实现细节（将来做能力插件时会用到）
 
 DSHA 的虚拟屏用手握手的**令牌**：

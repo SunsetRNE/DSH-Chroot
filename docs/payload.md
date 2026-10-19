@@ -65,12 +65,14 @@ python3 tools/build-payload.py --verify build/dsh-0.2.0-rc.2.tar.gz --manifest b
 python3 tools/build-payload.py --selftest        # 两层各自：确定性 + 校验 + 篡改检测
 ```
 
-**本基线实际产物（2026-10-19，已独立重建一次、两次构建逐字节相同）**：
+**本基线实际产物（2026-10-19）**：
 
 | 层 | 归档 | 压缩后 | 解压后 | 内容 |
 |---|---|---|---|---|
 | node | `node-24.21.0.tar.gz` | 60.4 MiB | 227 MiB | Node 官方 tarball + pnpm 11.28.5 |
-| dsh | `dsh-0.2.0-rc.2.tar.gz` | 116.9 MiB | 439 MiB | 13,382 个文件（含全部依赖） |
+| dsh | `dsh-0.2.0-rc.2.tar.gz` | 117.0 MiB | 514 MiB | 25,974 个文件（干净 `npm i -g` 树） |
+
+node 层独立重建两次字节相同；dsh 层做了两次独立 `npm i -g`，树哈希相同，tar 由该树确定性构建。
 
 两层的 sha256 以 `build/{node,dsh}.json` 与 [manifest.example.json](../baseline/manifest.example.json) 的 `layers` 为准（同一组值，不在这里重复）。
 

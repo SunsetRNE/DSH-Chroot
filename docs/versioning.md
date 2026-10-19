@@ -327,7 +327,7 @@ verdict = ok | deny；safe_mode = 0 | 1
 ```bash
 # 编辑 baseline/bake-ledger.json，在 bakes 末尾追加：
 #   { "seq": 2, "baked": "0.2.1-rc.2", "date": "2026-10-20", "note": "上游 rc 修了 X" }
-python3 tools/gen-version.py            # version 第 4 位自动变成 2（当前补丁位下 → 1.0.1.2）
+python3 tools/gen-version.py            # version 第 4 位自动变成 2（当前补丁位下 → 1.0.2.2）
 ```
 
 **回滚也记一条账**：把一份更旧的 DSH 重新烘进 payload 同样是一次烘焙 —— `seq` 继续 +1，`baked` 写回旧版本。

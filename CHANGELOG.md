@@ -2,6 +2,19 @@
 
 版本号与 `module.prop` 的 `version` 一致（[规范](docs/versioning.md)）。`update.json` 的 `changelog` 指向本文件。
 
+## v1.0.2.1（未发布）
+
+- **vendor 基准线（2026-10-19）**：外部依赖拉进仓库，不再“构建时上游刚好是什么”
+  - `vendor/chroot-distro/`：2.1.0+main.20251218 脚本（90 KB，**原样**）+ GPLv3 全文 + `SOURCE.json`
+  - `vendor/dsh/`：`@deepseek-ai/dsh@0.2.0-rc.2` tarball + 解包包体 + `npm-shrinkwrap.json`（538 包精确版本 + integrity）+ `tree.sha256`（29,280 项逐文件清单；**两次独立安装树哈希相同**）
+  - `NOTICE` + `vendor/README.md`：仓库 MIT；chroot-distro GPLv3；DSH MIT；分发边界写清
+  - `tools/vendor-check.py`：校验 vendor 文件哈希 + 已组装 DSH 树；CI 新增一步
+- **模块内置 chroot-distro**：`bin/chroot-distro`（90 KB）+ `licenses/chroot-distro/{LICENSE,SOURCE.json}` 进 zip；`customize.sh` 落到 `$DSH_ROOT/bin` 与 `$DSH_ROOT/licenses/`。运行时尚待 `runtime_start` 接线
+- **DSH 层改用干净安装树重建**：两次独立 `npm i -g`（npm 11.19.0 / Node 24.21.0）树哈希相同；新 `dsh-0.2.0-rc.2.tar.gz` 117.0 MiB / 25,974 文件 / sha256 `4c420513…2b62`；node 层不变
+- 旧 1.0.1.1 的 dsh 层（116.9 MiB / 13,382 文件，含 DSHA 带进来的 extraneous 包）作废；**必须用 1.0.2.1 的 payload**
+- 版本 `1.0.1.1` → `1.0.2.1`（补丁位 1 → 2）· `versionCode` 2 → 3
+- 说明：`npm-shrinkwrap.json` 是从已验证安装树生成的**记录**，不是 drop-in `npm ci`（原树是 global 安装，dev/optional 未齐）；重建以 `tree.sha256` 为准
+
 ## v1.0.1.1（未发布）
 
 - **payload 首次烘焙（2026-10-19）**：Node **24.21.0**（npm 11.19.0）+ pnpm **11.28.5** / DSH **0.2.0-rc.2**

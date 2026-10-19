@@ -53,10 +53,10 @@
 |---|---|
 | Alpine rootfs 基座 | ~5–8 MB |
 | Ubuntu rootfs 基座 | ~30–80 MB |
-| **DSH 本体（含 node_modules）** | **439 MB** 【已验证】 |
+| **DSH 本体（含 node_modules）** | **513 MB**（干净 `npm i -g` 树）【已验证】；DSHA 容器里那棵是 439 MB（被裁剪过，含 extraneous 包） |
 | 设备可用空间 | **582.94 GB** 【已验证】 |
 
-→ 基座差 50 MB 相对 439 MB 是 **<12% 的噪声**，何况设备有 582 GB。
+→ 基座差 50 MB 相对 513 MB 是 **<10% 的噪声**，何况设备有 582 GB。
 
 ---
 
@@ -122,7 +122,7 @@ dsh-<baked>.tar.gz  + dsh.json      # @deepseek-ai/dsh 完整树 + bin wrapper
 | 件 | 大小 | 内容 | 更新频率 |
 |---|---|---|---|
 | 模块 zip | KB 级 | CLI + 壳 + manifest + wrapper | 逻辑更新 / floor 抬高 |
-| payload 包 | 两层合计 ≈180 MiB（压缩后） | Node + pnpm + DSH 基线（**不含 rootfs**） | Node 变 / baked 变 |
+| payload 包 | 两层合计 ≈177 MiB（压缩后） | Node + pnpm + DSH 基线（**不含 rootfs**） | Node 变 / baked 变 |
 | state 目录 | 用户自己的 | `~/.dsh` + pnpm store | **永不覆盖** |
 
 模块首启：`base/` 存在且 hash 匹配 → 直接用；否则找 payload（预置 `/sdcard/Download/` 或下载）→ 解包 → 校验 → 落盘。

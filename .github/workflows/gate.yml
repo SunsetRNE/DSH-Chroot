@@ -38,6 +38,10 @@ jobs:
       - name: 版本真源契约（台账 / 拒绝类断言）
         run: python3 tools/test-versioning.py
 
+      # vendor 基准线：第三方文件哈希 + DSH 树清单（ADR-027）
+      - name: vendor 基准线
+        run: python3 tools/vendor-check.py
+
       # 模块包：< 1 MB、确定性；selftest 会模拟安装到临时 DSH_ROOT（ADR-024）
       - name: 模块打包 + 安装模拟
         run: |

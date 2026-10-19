@@ -1,0 +1,21 @@
+{
+  "component": "chroot-distro",
+  "version": "2.1.0+main.20251218",
+  "module_id": "chroot-distro",
+  "module_versionCode": 18,
+  "upstream": "https://github.com/Magisk-Modules-Alt-Repo/chroot-distro",
+  "license": "GPL-3.0-or-later",
+  "license_file": "LICENSE",
+  "files": {
+    "chroot-distro": "39459c596d5f83a093139988c9ef7d78304daef3cf4412c09cee050a05840d98",
+    "module.prop": "effbe869315fa12f4fad533b1f378a2317ba03e14240eebf587e1c68dce93ae3",
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  "source_archive": {
+    "name": "chroot-distro-v2.1.0+main-20251218.zip",
+    "sha256": "5c2ab56ce15e530ae57321c6d04ac3f1f309781ac26423a4a7eede5d600609ce",
+    "path_in_archive": "system/bin/chroot-distro"
+  },
+  "retrieved": "2026-10-19",
+  "note": "Bundled unmodified from the Magisk module zip. The GPLv3 text is vendored next to this file. The script is the upstream main branch snapshot dated 2025-12-18 (repacked)."
+}
