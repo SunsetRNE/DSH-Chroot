@@ -60,11 +60,26 @@ if [ -z "$DSH_BIN" ] || [ ! -x "$DSH_BIN" ]; then
     exit 2
 fi
 
+# cwd：容器里 DSH 的家在 /root（真机以 root 身份跑，这就是对的）。
+# 但换个身份跑（例如 CI 的 uid 1001）就进不去 /root —— spawn 会因为 chdir 失败报
+# EACCES，看起来像"假 dsh 没有执行位"，实际是 cwd 不可进入（2026-10-28 CI 实锤）。
+# 所以：显式给了就用；没给且 /root 可进入就用它；否则回落到可用目录，并**如实打印**。
+if [ -n "${DSH_SDK_CWD:-}" ]; then
+    CWD_NOTE=""
+elif [ -d /root ] && [ -x /root ]; then
+    DSH_SDK_CWD=/root
+    CWD_NOTE=""
+else
+    DSH_SDK_CWD="${TMPDIR:-/tmp}"
+    CWD_NOTE="  (fallback：当前身份进不去 /root)"
+fi
+export DSH_SDK_CWD
+
 echo "=== 环境 ==="
 echo "node : $NODE_BIN ($("$NODE_BIN" -v 2>/dev/null))"
 echo "dsh  : $DSH_BIN"
 echo "args : ${DSH_ARGS:---profile sdk}"
-echo "cwd  : ${DSH_SDK_CWD:-/root}"
+echo "cwd  : $DSH_SDK_CWD$CWD_NOTE"
 echo "超时 : ${TIMEOUT_MS}ms"
 
 # ---- 3) 协议探针 ----
@@ -77,7 +92,7 @@ const args = (process.env.DSH_ARGS || '--profile sdk').split(' ').filter(Boolean
 const timeoutMs = Number(process.env.DSH_SDK_TIMEOUT_MS || 45000);
 const provider = process.env.DSH_SDK_PROVIDER || 'deepseek-official';
 const model = process.env.DSH_SDK_MODEL || 'deepseek-flash';
-const cwd = process.env.DSH_SDK_CWD || '/root';
+const cwd = process.env.DSH_SDK_CWD || process.cwd();
 
 const t0 = Date.now();
 let out = '';

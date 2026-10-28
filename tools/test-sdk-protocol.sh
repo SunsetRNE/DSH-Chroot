@@ -113,7 +113,7 @@ echo "   fake dsh: $T/dsh"
 P() {
     _m=$1; shift
     FAKE_DIR="$T" FAKE_MODE="$_m" DSH_BIN="$T/dsh" DSH_NODE="$NODE_BIN" \
-        DSH_SDK_TIMEOUT_MS="${TMO:-45000}" \
+        DSH_SDK_CWD="$T" DSH_SDK_TIMEOUT_MS="${TMO:-45000}" \
         "${PROBE_SH:-sh}" "$PROBE" "$@"
 }
 
@@ -157,7 +157,7 @@ case "$_out" in
 esac
 run_has "provider 传进 initialize" 0 '"provider":"deepseek-official"' sh -c "cat '$T/init.json' 2>/dev/null; exit 0"
 run_has "model 传进 initialize" 0 '"model":"deepseek-flash"' sh -c "cat '$T/init.json' 2>/dev/null; exit 0"
-run_has "cwd 传进 initialize" 0 '"cwd":"/root"' sh -c "cat '$T/init.json' 2>/dev/null; exit 0"
+run_has "cwd 传进 initialize" 0 '"cwd":"'"$T"'"' sh -c "cat '$T/init.json' 2>/dev/null; exit 0"
 
 echo
 echo "== 5) 可覆盖性（换基线 / 换 provider 不该改脚本）"
@@ -167,7 +167,28 @@ FAKE_DIR="$T" FAKE_MODE=ok DSH_BIN="$T/dsh" DSH_NODE="$NODE_BIN" \
 run_has "DSH_SDK_PROVIDER 覆盖生效" 0 '"provider":"some-other"' sh -c "cat '$T/init.json' 2>/dev/null; exit 0"
 
 echo
-echo "== 6) 探针本体换 shell 复跑（真机 /system/bin/sh 是 mksh，不是 dash）"
+echo "== 6) 默认 cwd 与身份无关（没人指定时，不能因为进不去 /root 就判红）"
+_out=$(FAKE_DIR="$T" FAKE_MODE=ok DSH_BIN="$T/dsh" DSH_NODE="$NODE_BIN" sh "$PROBE" 2>&1); _rc=$?
+_cwdline=$(printf '%s\n' "$_out" | grep '^cwd  : ')
+if [ "$_rc" -eq 0 ] && printf '%s' "$_out" | grep -q 'RESULT=OK'; then
+    _ok "未指定 cwd 也能握手（$_cwdline）"
+else
+    _no "未指定 cwd 就判红（CI 的 uid 1001 进不去 /root，报出来却是 EACCES）" "rc=$_rc: $_cwdline"
+fi
+if [ -d /root ] && [ -x /root ]; then
+    case "$_cwdline" in
+        *"/root") _ok "cwd 默认 /root（当前身份可进入）" ;;
+        *) _no "cwd 默认值应为 /root" "$_cwdline" ;;
+    esac
+else
+    case "$_cwdline" in
+        *fallback*) _ok "cwd 回落到可用目录并如实标注（$_cwdline）" ;;
+        *) _no "进不去 /root 却没有标注 fallback" "$_cwdline" ;;
+    esac
+fi
+
+echo
+echo "== 7) 探针本体换 shell 复跑（真机 /system/bin/sh 是 mksh，不是 dash）"
 if command -v mksh >/dev/null 2>&1; then
     PROBE_SH=mksh run_has "mksh: 正常握手 -> 0" 0 "RESULT=OK" P ok
     PROBE_SH=mksh run_has "mksh: 缺 serverInfo 仍判红" 1 "RESULT=FAIL" P noserverinfo
