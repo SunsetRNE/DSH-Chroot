@@ -12,7 +12,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 设计决策 **ADR-001 ~ ADR-027** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
+| 设计决策 **ADR-001 ~ ADR-028** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
 | **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot`；版本真源拆三份（2026-10-18 → ADR-025）：`tools/version.env` / `baseline/dsh.env` / `baseline/bake-ledger.json`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
@@ -24,6 +24,7 @@
 | **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 确定性 + 安装模拟 **22/22**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy）。2026-10-19：13 条目，内置 `bin/chroot-distro`（GPLv3）+ 随包许可证 |
 | **vendor 基准线（ADR-027）** | ✅ 2026-10-19：chroot-distro 脚本原样 + GPLv3；DSH tarball + 538 包 shrinkwrap + 29,280 项 `tree.sha256`（两次独立安装树哈希相同）；`tools/vendor-check.py` 进 CI；仓库 MIT / 组件 GPLv3 双声明 |
 | **payload 首烘（两层）** | ✅ 2026-10-19：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.0-rc.2.tar.gz` 117.0 MiB（干净树 / 25,974 文件）；dsh 两次独立安装树哈希相同；**真实归档离线自举 89 s → status ok (baked)**（[payload.md](./payload.md) §4） |
+| **P1 载体（sdk profile）** | ✅ **协议闭环**（2026-10-28，[ADR-028](./decisions.md)）：`dsh --profile sdk` 走 **stdio JSON-RPC** · `initialize`→`serverInfo` 全往返 **1221 ms** · 设备探针 `verify-sdk-protocol.sh` + CI 契约 `test-sdk-protocol.sh` **20 条**（dash/mksh） |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
@@ -37,11 +38,18 @@
 3. ~~模块打包（引导器 < 1 MB）~~ ✅ **已完成（2026-10-18）**：13 条目 · 安装模拟 22/22 · 当前 **1.0.2.1 / versionCode 3**（内置 chroot-distro，GPLv3 随包）。
 4. ~~payload 首烘~~ ✅ **已完成（2026-10-19）**：Node **24.21.0** + pnpm **11.28.5** + DSH **0.2.0-rc.2**；
    两层 ≈177 MiB（解压 ≈741 MiB）；真实归档离线自举 **89 s**（26k 文件），`status` 报 `ok (baked)`。
-5. **下一步：`runtime_start` 的 real 分支** —— bind 两层进 chroot → `dsh web --port 0` → 从 stdout 抓
+5. ~~P1 载体：`dsh --profile sdk` 的 stdio JSON-RPC~~ ✅ **已完成（2026-10-28，ADR-028）**：`initialize`→`serverInfo`
+   全往返 **1221 ms**（Ubuntu 24.04.3 chroot / Node 24.22.1 / dsh 0.2.1-rc.4）；设备探针
+   [tools/verify-sdk-protocol.sh](../tools/verify-sdk-protocol.sh)（退出码 0/1/2）+ CI 契约
+   [tools/test-sdk-protocol.sh](../tools/test-sdk-protocol.sh)（**20 条**，dash/mksh 各一遍，假 dsh 驱动，不联网不装真包）。
+   ⚠️ 这套版本组合**尚未进烘焙台账**（台账仍是 `seq=1` / `baked=0.2.0-rc.2`）；要不要抬 baked 走 §7 的记账纪律，
+   **不是**改一行 `dsh.env` 的事。
+6. **下一步：`runtime_start` 的 real 分支（= P2，`web` 载体）** —— bind 两层进 chroot → `dsh web --port 0` → 从 stdout 抓
    `http://127.0.0.1:<port>/?token=…` → 原子写 `run/dsh.json`。做完这一步，`start` 才算真的把 DSH 跑起来
    （现在 real 分支会如实报 30，fake 分支只用于契约测试）。
-6. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.2.1** → 投递 `payload-1.0.2.1` → `bootstrap --offline` →
-   `status` 应显示 node/layer/version 全 ok，`start` 仍报 30（等第 5 步）。
+   与 P1 的关系见 [ADR-028](./decisions.md) 决定 B：两条载体共用 `ProcessHost`，就绪判据不同（`serverInfo` vs 启动行 URL）。
+7. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.2.1** → 投递 `payload-1.0.2.1` → `bootstrap --offline` →
+   `status` 应显示 node/layer/version 全 ok，`start` 仍报 30（等第 6 步）。
 
 **一句话记住三条硬约束**：① 只做 `local` + `lan`，公网不碰；② 与 DSHA **并存但绝不共用 `DSH_HOME`**；③ 固件只抽**内核侧四件套**，永不整包刷、永不恢复 `data`。
 

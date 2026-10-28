@@ -1404,7 +1404,27 @@ alpha / 非 rc 预发布 → `safe_mode=1`，但今天**没有"禁用全部插�
 - **重审触发**：① 要做完全离线构建 → 把 npm 缓存/tarball 也纳入 Release 资产；② 上游给出可 drop-in 的正式 lock → 换成标准 lock；③ 需要修改 chroot-distro → 按 GPLv3 发布 fork 源码。
 
 ---
+## ADR-028 P1 载体定为 `--profile sdk`（stdio JSON-RPC），`web` 降为 P2 分支  ← **本次决定**
+- **背景**：壳要“把 DSH 跑起来”，此前只有一条路——`dsh web --port 0` + 从启动行抓 token URL（ADR-013 的 runtime 契约，guide 第 5 条）。真机实测发现 DSH 还有**第二个载体**：`dsh --profile sdk`，用 **stdio 上的 JSON-RPC** 说话，不需要端口、不需要 token、不需要 HTTP。
+- **决定 A：P1 走 sdk**
+  - 垫片侧 `ProcessHost` 直接 `spawn dsh --profile sdk`，NDJSON 行协议：`initialize` → 拿 `serverInfo` → `shutdown`；
+  - **不绑端口、不发 HTTP、不落 token 文件**，因此天然绕开“端口发现 + 凭据分发”这两件最容易出错、也最容易被审计卡住的事；
+  - 真机证据（2026-10-28，Ubuntu 24.04.3 chroot / Node 24.22.1 / dsh 0.2.1-rc.4）：`initialize` + `shutdown` 全往返 **1221 ms**，`serverInfo = deepseek-harness-sdk-runtime 0.0.1`，进程干净退出。
+- **决定 B：`web` 仍是 P2，不删**
+  - 两者不是替代关系：`web` 承载“**人**用浏览器看”，`sdk` 承载“**垫片**拿能力”；
+  - guide 第 5 条（`runtime_start` real 分支）保留为 P2，`start` 报 `30` 的语义不变；
+  - 两条路共用一层 `ProcessHost` 抽象（spawn → 就绪判据 → 优雅停机），就绪判据不同：sdk 看 `serverInfo`，web 看 stdout 的 `http://127.0.0.1:<port>/?token=…`。
+- **决定 C：`provider` / `model` 必须由 `initialize` 带入**
+  - 不带 → 上游回 `-32603` 且文案是 `no adapter registered for provider "undefined"`——**不是**“缺参数”，照字面查会查错方向（真机已踩，浪费一轮）；
+  - 探针默认 `provider: deepseek-official` / `model: deepseek-flash`，可用 `DSH_SDK_PROVIDER` / `DSH_SDK_MODEL` 覆盖，不写死在 Kotlin 里。
+- **决定 D：契约进 CI，但 CI 不装真包**
+  - 设备侧：`tools/verify-sdk-protocol.sh`（退出码 **0=通过 / 1=握手失败 / 2=环境缺失**）；
+  - CI 侧：`tools/test-sdk-protocol.sh`——用一个**假 dsh**（node 脚本）把六种故障态演一遍，**17 条断言**，dash 与 mksh 各跑一遍；
+  - 因此 CI **不需要网络、不需要 root、不需要 616 个包**；真包只在真机跑设备侧探针。
+- **代价**：① 两条载体 = 两份就绪判据要维护；② `serverInfo` 只证明“DSH 起来了”，**不证明“模型能答”**，别把它当 E2E；③ 设备侧探针自己需要 node，容器里没 node 只能报 `2`。
+- **重审触发**：① `sdk` profile 被改名/移除（先跑设备侧探针，一眼可见）→ P1 换载体；② 出现只有 `web` 才有的能力（例如文件通道）→ 把该能力单独桥出来，而不是回退整条路；③ `sdk` 要求握手后的额外调用才给能力 → `ProcessHost` 长出请求路由，而不是改协议。
 
+---
 ## 附：一条来自源码的实现细节（将来做能力插件时会用到）
 
 DSHA 的虚拟屏用手握手的**令牌**：

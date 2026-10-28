@@ -4,6 +4,16 @@
 
 ## v1.0.2.1（未发布）
 
+- **P1 载体定案：`dsh --profile sdk` 的 stdio JSON-RPC（2026-10-28，ADR-028）**
+  - 真机 chroot 实测：`initialize` → `serverInfo`（`deepseek-harness-sdk-runtime 0.0.1`）**全往返 1221 ms**，`shutdown` 后进程干净退出；
+    不需要端口、不需要 token、不落 HTTP 凭据
+  - 新增 `tools/verify-sdk-protocol.sh`：设备侧探针，退出码 **0=通过 / 1=握手失败 / 2=环境缺失**，参数一律走 `DSH_*` 环境变量（换基线不改脚本）
+  - 新增 `tools/test-sdk-protocol.sh`：CI 契约 **20 条**——用假 dsh 演六种故障态（缺 `serverInfo` / `-32603` / 启动即崩 / 挂住不回 / stdout 污染 / 环境缺失），
+    dash 与 mksh 各跑一遍；**不联网、不装 616 个包、不需要 root**
+  - `.github/workflows/gate.yml` 新增两步；`docs/decisions.md` 增 ADR-028；`docs/guide.md` 进度表 + 下一步重排（real 分支降为 P2）；`docs/baseline.md` 复现清单加“sdk 握手”一项
+  - `web` 载体（`--port 0` + 启动行 token URL）保留为 **P2**，与 P1 共用 `ProcessHost`，就绪判据不同；`start` 仍如实报 **30**
+  - ⚠️ **未抬基线**：台账仍是 `seq=1` / `baked=0.2.0-rc.2`；上面 1221 ms 的实测跑在 **Node 24.22.1 + dsh 0.2.1-rc.4** 上，
+    要进基线必须按 [baseline §7](docs/baseline.md) 追加 `seq=2` 并重打 payload（版本分叉说明见 baseline §6）
 - **vendor 基准线（2026-10-19）**：外部依赖拉进仓库，不再“构建时上游刚好是什么”
   - `vendor/chroot-distro/`：2.1.0+main.20251218 脚本（90 KB，**原样**）+ GPLv3 全文 + `SOURCE.json`
   - `vendor/dsh/`：`@deepseek-ai/dsh@0.2.0-rc.2` tarball + 解包包体 + `npm-shrinkwrap.json`（538 包精确版本 + integrity）+ `tree.sha256`（29,280 项逐文件清单；**两次独立安装树哈希相同**）

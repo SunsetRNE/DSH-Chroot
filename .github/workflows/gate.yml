@@ -52,12 +52,18 @@ jobs:
       # 真机自检脚本必须由 lib + spec 生成，不许手改
       - name: 设备自检脚本与源保持一致
         run: python3 tools/build-device-selftest.py --check
-
       # 生成出来的单文件脚本本身也要能跑（dash + mksh 各跑一遍 76 条）
       - name: 单文件自检脚本可运行
         run: |
           dash tools/verify-gate-device.sh
           mksh tools/verify-gate-device.sh
+
+      # P1 载体：sdk profile 的 stdio JSON-RPC 握手（ADR-028）。假 dsh 驱动，不装真包、不联网
+      - name: sdk 协议探针自测（dash）
+        run: dash tools/test-sdk-protocol.sh
+
+      - name: sdk 协议探针自测（mksh）
+        run: mksh tools/test-sdk-protocol.sh
 
       # 壳的六条契约 + 退出码表（ADR-013 / ADR-024）
       - name: 壳契约测试（dash）
