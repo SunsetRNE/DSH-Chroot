@@ -63,7 +63,8 @@
 |---|---|
 | [docs/guide.md](docs/guide.md) | **内部项目指引**：进度 / 决定速查 / 待办（想快速看懂全貌从这里进） |
 | [docs/research.md](docs/research.md) | 架构与路线研究：目标、盘点、路线比较、端口与通信 |
-| [docs/decisions.md](docs/decisions.md) | **ADR-001 ~ ADR-026**：26 条独立决策 + 代价 + 重审触发 |
+| [docs/decisions.md](docs/decisions.md) | **ADR-001 ~ ADR-030**：30 条独立决策 + 代价 + 重审触发 |
+| [docs/errors.md](docs/errors.md) | **报错与定位**：错误码分层 + 每条绑一条探针 + 组合签名（脚本生成，不手改） |
 | [docs/threat-model.md](docs/threat-model.md) | 威胁模型，含 §5「不设防声明」 |
 | [docs/baseline.md](docs/baseline.md) | 基线定义：Ubuntu 24.04 / Node 24 / pnpm 11.x / DSH 基线 |
 | [docs/versioning.md](docs/versioning.md) | 版本号、`module.prop`、命名分工、semver 闸门 |
@@ -77,6 +78,7 @@ python3 tools/check-gate.py             # 三份实现 × 一张向量表（版�
 python3 tools/test-versioning.py        # 版本真源契约：台账派生 / 拒绝类断言 / 漂移检测
 python3 tools/gen-version.py            # 从三个真源生成 build/（发布模式；占位会直接报错）
 python3 tools/build-module.py           # 打模块 zip（< 1 MB、确定性；见 docs/module.md）
+python3 tools/gen-errors.py --check     # 报错文档与真源一致（docs/errors.md 由 spec/errors.json 生成）
 ```
 
 需要说明的一点：版本比较是本项目**唯一写错会静默出错**的地方 —— `"0.2.1-rc.1" < "0.2.0-rc.2"` 在字典序上成立，

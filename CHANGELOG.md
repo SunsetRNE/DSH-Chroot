@@ -20,7 +20,15 @@
 - **新增 `tools/verify-runtime.sh`（真机探针，18 条断言）**：起容器 → 查 `dsh.json` → 验两层 `ro` → 带 token 访问（200）
   → 不带 token 被拒（401）→ 验日志无 token → stop 后进程/挂载/`dsh.json` 全清。退出码 **0/1/2**
 - **契约测试 43 → 47 条**（`tools/test-service.sh` §11）：rootfs 不存在 → 60、目录不像 rootfs → 60、失败不留 `dsh.json`、`status` 报 runtime
-- 文档：`guide.md` 第 6 步收口、`module.md` 开机路径、ADR-029、本文件
+- **报错体系骨架（ADR-030）**：`spec/errors.json` 单一真源 → `docs/errors.md` 由脚本生成，`--check` 接进门禁（**文档不手改**）
+  - **11 条错误码**（`E-L<层><类>-<大类>-<序号>`，层 = `L0K` 内核 / `L1C` 容器 / `L2D` 本体 / `L3S` 壳 / `L4U` 前端）
+    + **4 个组合签名**；9 条 `verified`（有真机或 CI 证据）、2 条 `reported`（未实测，明确标注，不冒充已验证）
+  - **每条必须绑一条能证明它的探针**（`probe` + `expect`）：说不出"跑什么命令能证明它"的，不许进表
+  - 组合签名回答"到底是哪一种报错"：`when` 1 条 = 该条即可定论，≥2 条 = 同源组合
+    （例：`E-L2D-PORT-001 + E-L1C-DEV-001` → 「容器根文件系统不完整，不是 dsh 的问题」）
+  - 生成器会拦：code 格式 / 全局唯一 / **层前缀与 `layer` 一致** / 签名与退出码引用的 code 必须存在；`--check` 逐字节比对文档
+  - 退出码 ↔ 错误 的映射也放真源（`exit_codes`），生成器**不硬编码任何领域知识**（否则就是第二份真源）
+- 文档：`guide.md` 第 6 步收口、`module.md` 开机路径、`docs/errors.md`（新增）、ADR-029、ADR-030、本文件
 
 ## v1.0.2.2（未发布）
 

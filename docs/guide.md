@@ -12,7 +12,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 设计决策 **ADR-001 ~ ADR-029** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
+| 设计决策 **ADR-001 ~ ADR-030** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
 | **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot`；版本真源拆三份（2026-10-18 → ADR-025）：`tools/version.env` / `baseline/dsh.env` / `baseline/bake-ledger.json`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
@@ -83,6 +83,7 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 10 | [docs/versioning.md](./versioning.md) | **版本号与 module.prop 规范**（四位 version / versionCode / managedFeatures 真实语义 / 单一真源 / 命名分工） |
 | 11 | [docs/payload.md](./payload.md) | **payload 规范**：两层 / 四个文件 / 字段 / 确定性构建 / 五道校验链 |
 | 12 | [docs/module.md](./module.md) | **模块包规范**：包内布局 / 安装与开机路径 / 卸载策略 / 构建与自测 |
+| 13 | [docs/errors.md](./errors.md) | **报错与定位**：11 条错误码（分层命名）+ 4 个组合签名；真源 `spec/errors.json`，文档由脚本生成 |
 | 13 | [baseline/manifest.example.json](../baseline/manifest.example.json) · [baseline/module.prop.example](../baseline/module.prop.example) | 闸门 manifest 模板、module.prop 生成结果、模块包钩子模板 |
 
 ---
@@ -122,7 +123,7 @@ L6 分发     ⑰ 卸载钩子 = uninstall.sh（七处残留面） ✅ ADR-017�
 ```
 
 > ⚠️ 常见误解：以为上面的选项会两两组合出"很多套方案"。**不会** —— 每条轴独立选。
-> **截至 ADR-026，设计层全部拍板，没有待定项**（ADR-001 ~ ADR-026）。
+> **截至 ADR-030，设计层全部拍板，没有待定项**（ADR-001 ~ ADR-030）。
 
 ### 3.1 文件通道这条轴的真实结构（为什么说它不是"二选一"）
 
@@ -225,11 +226,12 @@ DSH-Chroot/                         # 仓库名；模块 id 是 Zodiac-Quill-Sag
 │   ├── baseline.md                 # 基线定义 + libc 依赖审计 + manifest 规范
 │   ├── projects.md                 # 涉及项目清单（用 / 不用 / 备选）
 │   ├── pitfalls.md                 # 反例集：弯路 23 条 + 进阶 10 条（A20 mksh 方言；A21 semver 编码；A22 占位符；A23 install.sh legacy）
-│   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-026
+│   ├── decisions.md                # 决策记录 ADR-001 ~ ADR-030
 │   ├── threat-model.md             # 威胁模型（资产/对手/边界/对账/不设防声明）
 │   ├── recovery.md                 # 刷机前证据与回滚预案（ARB / 增量包 / 抽分区）
 │   ├── versioning.md               # 版本号与 module.prop 规范
 │   ├── payload.md                  # payload 规范（ADR-024 的实现面）
+│   ├── errors.md                   # 报错与定位（SPEC 生成：错误码 / 探针 / 组合签名）
 │   └── module.md                   # 模块包规范（布局 / 安装 / 开机 / 卸载 / 构建）
 ├── spec/
 │   └── gate-vectors.json           # ★ 版本闸门的唯一规格（三份实现都对着它跑）
