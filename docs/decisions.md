@@ -1434,3 +1434,74 @@ DSHA 的虚拟屏用手握手的**令牌**：
 - 输入侧有"**帧门**"：`frameSeq` 必须是你刚看过的那一帧，否则 `FRAME_EXPIRED` / `FRAME_NOT_OBSERVED`（`VirtualScreenPolicy`）
 
 这套"**特权 helper 回报令牌 + 宿主按帧门校验**"的模式值得直接借用——它同时解决了**鉴权**和**乱序输入**两个问题。
+
+---
+
+## ADR-029 运行时启动（P2）：真 chroot + 两层 bind(ro) + 启动行取端口  ← **本次决定**
+
+- **背景**：P1（`dsh --profile sdk` 的 stdio JSON-RPC）已闭环，但 `start` 的 real 分支一直是占位（`return 30`），
+  壳只能"报告没起"，不能"真的起"。本轮把它做成可用的东西。与 P1 的关系见 [ADR-028](#adr-028-两条载体p1-stdio-与-p2-web共用-processhost) 决定 B：共用窄接口，就绪判据不同。
+
+### 证据（2026-10-28，真机 PJD110 / Android 16 / chroot ubuntu noble）
+
+| 事实 | 实测 |
+|---|---|
+| 启动行 | `dsh web --port 0` 的 **stdout 首行** = `dsh web: http://127.0.0.1:<port>/?token=<43 字符>`；stderr 为空 |
+| 端口 | 三次独立启动 `33115` / `45473` / `36791`，均与 `dsh.json` 一致（OS 分配，非猜测） |
+| 鉴权 | 带 token → `303` →（cookie）`200` / 37,971 B / `<title>DeepSeek Harness</title>`；不带 token → `401` |
+| 容器 `/dev` | **`/dev/null` 是 23 字节的普通文件，`/dev/ptmx` 不存在** —— 建 devtmpfs 后 `verify-pty.sh` 双通道均得 `/dev/pts/0` |
+| 只读 bind | toybox `mount -o bind,ro` 与 `-o remount,ro,bind` **返回 0 但 flags 仍是 `rw`**（静默失败）；busybox `remount,ro,bind` 才真的 `ro`，写入 `EROFS` |
+| 停止 | 按进程组 `TERM` → 10 s → `KILL`；停后 `mount | grep rootfs` = **0**、pid 消失、`dsh.json` 删除 |
+
+### 决定 A：容器内布局固定，不随版本漂
+
+```
+<rootfs>/opt/dsh/node      ← base/node      (bind ro)
+<rootfs>/opt/dsh/current   ← base/dsh-<ver> (bind ro)
+<rootfs>/root/.dsh         ← $DSH_ROOT/data/.dsh (bind rw, 0700)   ← DSH_HOME
+```
+
+只读层给**程序**，可写卷给**数据**（ADR-009 的同一条思路）。PATH 只加 `/opt/dsh/node/bin`，不注入别的东西。
+
+### 决定 B：端口与 token 只从启动行取，且**不落盘**
+
+- 搬运路径：`dsh stdout → 数据 fifo →（匹配到 http://127.0.0.1: 的那一行）→ 结果 fifo → 壳变量 → run/dsh.json`。
+  token 不进任何日志、不进临时文件；`run/dsh.json`（**0600**）是唯一落地处（ADR-021/022）。
+- 读到的行必须在 `60 s` 内出现（`RT_READY_TIMEOUT`，可调）；超时即 `60` 并把 `log/dsh.log` 指给用户。
+- 为什么不用"扫 netstat"：端口是 OS 分配的，扫表既慢又会撞上别人的端口；启动行是**上游自己的真源**。
+
+### 决定 C：挂载表先给**最小集**，其余按功能落地
+
+本版只挂 6 条：`node`(ro) · `current`(ro) · `data/.dsh`(rw) · `proc` · `tmpfs /dev` · `devpts`。
+
+ADR-016 里的 `shared` / `inbox` / `log` / `agents` / `/mnt/public` **暂不挂**——它们各自是**一条暴露面 + 一种失败模式**，
+在文件通道、容器内安装、公开导出这些功能真正落地前挂上去，只是给攻击面和排障增加维度。挂载表扩容与本表同步修订。
+
+### 决定 D：只读**必须验**，验不过要喊出来
+
+`mount` 的返回值不可信（见上表）。所以 `rt_make_ro` 挂完读 `/proc/mounts` 的 flags：
+toybox 两种写法 → busybox → 仍不行则写 `run/layers-rw`，`status` 显式打印
+`layers : rw（只读挂载失败：版本层完整性保护缺失）`。**不静默降级**，也不因此拒绝启动（先在日志里留证，后续版本再收严）。
+
+### 决定 E：退出码 `60` = 运行时未就绪
+
+`30` 保持"payload 缺失/校验失败"的语义不变；"容器起不来 / dsh 没报出端口"是**另一类失败**，用 `60`。
+混成一个码，UI 与用户就只能猜（这正是"报错大全"要解决的第一类问题）。
+
+### 代价（明码标价）
+
+1. 最小挂载集 ⇒ 容器里**暂时没有**共享目录、公开导出面；这些功能上线前 `dsh` 看不到 `/mnt/shared`。
+2. `/dev` 每次 `start` 重建 ⇒ 设备节点 inode 会变；因为进程随容器一起重启，不影响现有连接，但**跨重启持有 fd** 的用法不支持。
+3. 只读依赖 busybox（chroot-distro 本来就硬依赖 BusyBox ≥ 1.36.1，不算新增依赖）；真拿不到时按决定 D 降级并记账。
+4. `stop` 是"杀进程组"，不是"优雅退出"；`dsh` 未落盘的会话状态会丢（会话数据本就在 `$DSH_HOME`，风险可控）。
+
+### 重审触发
+
+- 要做**文件通道 / 公开导出 / 容器内 install** → 挂载表扩容，本 ADR 决定 C 重写；
+- `dsh` 改掉启动行格式（或改成语义化 JSON）→ 决定 B 的解析要跟着改（`60` 是兜底，不会静默起错）；
+- 需要"停容器但保留内部进程"→ 现模型（进程组 + 卸载）不支持，要换运行时抽象。
+
+### 相关
+
+ADR-009（ro 版本层）· ADR-016（挂载布局，本文修订其"版本层挂 `/`"的旧表述——那是单层时代的写法）·
+ADR-021/022（凭据分层、token 不进日志）· ADR-028（P1/P2 共用窄接口）。

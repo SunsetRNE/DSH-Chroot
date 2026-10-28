@@ -2,6 +2,26 @@
 
 版本号与 `module.prop` 的 `version` 一致（[规范](docs/versioning.md)）。`update.json` 的 `changelog` 指向本文件。
 
+## v1.0.3.2（未发布）
+
+- **P2 闭环：`runtime_start` 的 real 分支（2026-10-28，ADR-029）** —— `start` 不再是 30，而是真的把 DSH 跑起来
+  - 真机实测：`dsh web --port 0` 在 chroot 里起来后，stdout **首行**就是 `dsh web: http://127.0.0.1:<port>/?token=…`；
+    端口与 token 从这一行取，写进 `run/dsh.json`（**0600**），日志里只有端口
+  - **token 全程不落盘**：启动行走「数据 fifo → 结果 fifo」搬运，`run/dsh.json` 是唯一落地处（ADR-022）
+  - **退出码新增 60**「运行时未就绪」：与 30（payload 缺失/校验失败）分开，`status` 能直接看出是缺件还是起不来
+  - **挂载表（最小集）**：`base/node` → `/opt/dsh/node`（ro）· `base/dsh-<ver>` → `/opt/dsh/current`（ro）· `data/.dsh` → `/root/.dsh`（rw）
+    · `proc` · `tmpfs /dev` + `devpts /dev/pts`
+  - **容器 `/dev` 必须自己建**：真机实测这个 rootfs 的 `/dev/null` 是 **23 字节的普通文件**、`/dev/ptmx` 不存在
+    → 不建 devtmpfs 就是「哈希对、功能死」（PTY 直接不可用，`verify-pty.sh` 双通道都红）
+  - ⚠️ **toybox 的只读 bind 是静默失败**：`mount -o bind,ro` 与 `-o remount,ro,bind` 都返回 0 但仍 `rw`；
+    只有 **busybox** 的 `remount,ro,bind` 真的生效（写入 `EROFS`）。所以挂完必须**验 `/proc/mounts` 的 flags**，
+    验不过就写 `run/layers-rw` 并在 `status` 里显式报「完整性保护缺失」——不假装
+  - 停止：按**进程组**杀（`setsid` 起的会话首进程 = pgid），再 `KILL` 兜底；停完整层卸载 + 删 `dsh.json`
+- **新增 `tools/verify-runtime.sh`（真机探针，18 条断言）**：起容器 → 查 `dsh.json` → 验两层 `ro` → 带 token 访问（200）
+  → 不带 token 被拒（401）→ 验日志无 token → stop 后进程/挂载/`dsh.json` 全清。退出码 **0/1/2**
+- **契约测试 43 → 47 条**（`tools/test-service.sh` §11）：rootfs 不存在 → 60、目录不像 rootfs → 60、失败不留 `dsh.json`、`status` 报 runtime
+- 文档：`guide.md` 第 6 步收口、`module.md` 开机路径、ADR-029、本文件
+
 ## v1.0.2.2（未发布）
 
 - **基线抬升：DSH 0.2.0-rc.2 → 0.2.1-rc.4（台账 `seq=2`，2026-10-28）** —— ADR-022 只追 RC，取 npm `next` 通道

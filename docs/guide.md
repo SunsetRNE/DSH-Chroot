@@ -1,6 +1,6 @@
 # DSH 容器化替代 DSHA —— 项目指引
 
-> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ **vendor 基准线**（ADR-027）+ 模块 **1.0.2.1**；2026-10-28：**P1 协议闭环**（ADR-028）+ 基线抬到 **0.2.1-rc.4**（台账 `seq=2`，floor 同值）+ 模块 **1.0.2.2**）。
+> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ **vendor 基准线**（ADR-027）+ 模块 **1.0.2.1**；2026-10-28：**P1 协议闭环**（ADR-028）+ 基线抬到 **0.2.1-rc.4**（台账 `seq=2`，floor 同值）+ 模块 **1.0.2.2**；晚间：**P2 容器启动闭环**（ADR-029）+ 模块 **1.0.3.2**）。
 > 阶段二（自定义内核 / Droidspaces）已按你的决定裁掉，仅在 `docs/pitfalls.md` 里留作"进阶与触发条件"。
 > 本文档集是给"未来的你"看的：过一段时间回来，只读本文件就能恢复全部上下文。
 
@@ -12,7 +12,7 @@
 
 | 项 | 状态 |
 |---|---|
-| 设计决策 **ADR-001 ~ ADR-028** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
+| 设计决策 **ADR-001 ~ ADR-029** | ✅ 全部拍板（[docs/decisions.md](./decisions.md)） |
 | **模块身份**（id / name / 仓库 / 版本真源） | ✅ 定稿（2026-10-17）：id `Zodiac-Quill-Saga` · name `DSH Chroot` · 仓库 `DSH-Chroot`；版本真源拆三份（2026-10-18 → ADR-025）：`tools/version.env` / `baseline/dsh.env` / `baseline/bake-ledger.json`（命名分工见 [versioning §8](./versioning.md)） |
 | 设备侧证据（root 形态 / 系统版本 / 固件包） | ✅ 齐了（见 §4、[docs/recovery.md](./recovery.md) §9） |
 | **设备 shell 通道** | ✅ **已连接**（2026-10-16，经 root：`uid=0` + SELinux `u:r:ksu:s0`）；只读核查已跑完 → §5 |
@@ -25,6 +25,7 @@
 | **vendor 基准线（ADR-027）** | ✅ 2026-10-19：chroot-distro 脚本原样 + GPLv3；DSH tarball + 616 包 shrinkwrap + **68,198 项** `tree.sha256`（两次独立安装树哈希相同；2026-10-28 随 rc.4 整份重做）；`tools/vendor-check.py` 进 CI；仓库 MIT / 组件 GPLv3 双声明 |
 | **payload（两层）** | ✅ 2026-10-19 首烘 / **2026-10-28 换 dsh 层**：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.1-rc.4.tar.gz` 154.0 MiB（68,202 条目 / 63,045 文件 / sha256 `7c31ca6a…`）；两次独立安装树哈希相同；**真实归档离线自举 89 s → status ok (baked)**（[payload.md](./payload.md) §4） |
 | **P1 载体（sdk profile）** | ✅ **协议闭环**（2026-10-28，[ADR-028](./decisions.md)）：`dsh --profile sdk` 走 **stdio JSON-RPC** · `initialize`→`serverInfo` 全往返 **1221 ms** · 设备探针 `verify-sdk-protocol.sh` + CI 契约 `test-sdk-protocol.sh` **20 条**（dash/mksh） |
+| **P2 载体（web profile，真容器启动）** | ✅ **闭环**（2026-10-28，[ADR-029](./decisions.md)）：真 chroot + 两层 `bind(ro)` → `dsh web --port 0` → 启动行取端口/token → `run/dsh.json`(0600)；真机 `http=200` / 37,971 B / `<title>DeepSeek Harness</title>`，无 token → 401；停后挂载清零。设备探针 `verify-runtime.sh` **18 条** · 契约测试 **47 条**（dash）· 新退出码 **60** |
 | 阻塞项 | **无** |
 
 **下一步该做的**（按顺序）：
@@ -43,12 +44,13 @@
    [tools/verify-sdk-protocol.sh](../tools/verify-sdk-protocol.sh)（退出码 0/1/2）+ CI 契约
    [tools/test-sdk-protocol.sh](../tools/test-sdk-protocol.sh)（**20 条**，dash/mksh 各一遍，假 dsh 驱动，不联网不装真包）。
    ✅ 2026-10-28 **已进台账**：`seq=2` / `baked=0.2.1-rc.4`（floor 同值），Node 对齐 **24.21.0** 后复测 1252 ms 通过（[baseline §6](./baseline.md)）。
-6. **下一步：`runtime_start` 的 real 分支（= P2，`web` 载体）** —— bind 两层进 chroot → `dsh web --port 0` → 从 stdout 抓
-   `http://127.0.0.1:<port>/?token=…` → 原子写 `run/dsh.json`。做完这一步，`start` 才算真的把 DSH 跑起来
-   （现在 real 分支会如实报 30，fake 分支只用于契约测试）。
-   与 P1 的关系见 [ADR-028](./decisions.md) 决定 B：两条载体共用 `ProcessHost`，就绪判据不同（`serverInfo` vs 启动行 URL）。
-7. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.2.2** → 投递 `payload-1.0.2.2` → `bootstrap --offline` →
-   `status` 应显示 node/layer/version 全 ok，`start` 仍报 30（等第 6 步）。
+6. ~~`runtime_start` 的 real 分支（= P2，`web` 载体）~~ ✅ **已完成（2026-10-28，ADR-029）**：`base/node` 与 `base/dsh-<ver>`
+   以 `bind(ro)` 进 `/opt/dsh/{node,current}` → chroot 起 `dsh web --port 0` → 从 **stdout 启动行**取端口/token →
+   原子写 `run/dsh.json`（0600）。真机端到端：`http=200` / 37,971 B / `<title>DeepSeek Harness</title>`，无 token → 401。
+   三个坑写进 ADR-029：容器 `/dev` 是空的（`/dev/null` 竟是普通文件）、toybox 的只读 bind **静默失败**、`curl` 必须带超时。
+7. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.3.2** → 投递 `payload-1.0.3.2` → `bootstrap --offline` →
+   `status` 应显示 node/layer/version 全 ok → `start` 应真的起来（`port` 那一行有值）；
+   只想验运行时而不动真数据，跑 `sh tools/verify-runtime.sh <rootfs> <node层> <dsh层>`（18 条断言）。
 
 **一句话记住三条硬约束**：① 只做 `local` + `lan`，公网不碰；② 与 DSHA **并存但绝不共用 `DSH_HOME`**；③ 固件只抽**内核侧四件套**，永不整包刷、永不恢复 `data`。
 

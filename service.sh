@@ -3,6 +3,7 @@
 #
 # 动词: boot | start | stop | restart | status | bootstrap [--offline] | install <file> | logs [--tail N] | help
 # 退出码: 0 成功 · 10 已是当前状态 · 20 停止失败 · 30 payload 缺失/校验失败 · 40 切换失败 · 50 版本闸门拒绝
+#         · 60 运行时未就绪（容器起不来 / dsh 没在超时内报出端口；ADR-029）
 #
 # 契约（ADR-013 决定 B）:
 #   ① 非交互（stdin 钉 /dev/null）② 环境钉死 ③ 幂等 ④ 先停后换 ⑤ 默认离线 ⑥ 状态+标记+退出码
@@ -102,6 +103,10 @@ json_field() { # $1=file $2=key
     sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$1" 2>/dev/null | head -n1
 }
 
+json_num() { # $1=file $2=key —— 取数字字段（json_field 只认带引号的值）
+    sed -n "s/.*\"$2\"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p" "$1" 2>/dev/null | head -n1
+}
+
 first_match() { # $1=glob -> 第一个真实存在的文件
     for _f in $1; do
         if [ -f "$_f" ]; then printf '%s\n' "$_f"; return 0; fi
@@ -176,29 +181,230 @@ version_state() {
 }
 
 # ---------- 运行时适配层（换容器实现只改这两个函数） ----------
+# P2（ADR-029）：real = 真 chroot + 两层 bind(ro) + 端口从 stdout 启动行取
+#
+# 挂载表（最小集：够把 DSH 起起来就够，其余按功能落地再加，见 ADR-029 决定 C）
+#   base/node      ro → <rootfs>/opt/dsh/node
+#   base/dsh-<ver> ro → <rootfs>/opt/dsh/current
+#   data/.dsh      rw → <rootfs>/root/.dsh      ← DSH_HOME（0700）
+#   proc              → <rootfs>/proc
+#   tmpfs             → <rootfs>/dev            ← 每次起容器重建
+#   devpts            → <rootfs>/dev/pts
+#
+# 为什么 /dev 要自己建：rootfs 来自 tarball，/dev 里可能只有"普通文件"。
+# 真机实测这个 rootfs 的 /dev/null 是 23 字节的普通文件、/dev/ptmx 根本不存在
+# → 哈希对、功能死（PTY 直接不可用）。所以这里按 init 的做法建最小 devtmpfs。
+RT_ROOT=/opt/dsh
+RT_NODE=$RT_ROOT/node
+RT_DSH=$RT_ROOT/current
+RT_HOME_IN=/root/.dsh
+RT_READY_TIMEOUT=${RT_READY_TIMEOUT:-45}
+DSH_HOME_HOST="$DSH_ROOT/data/.dsh"
+
+rt_container_rootfs() {
+    if [ -n "${DSH_CONTAINER_ROOTFS:-}" ]; then printf '%s\n' "$DSH_CONTAINER_ROOTFS"; return 0; fi
+    _r=""
+    [ -n "$MANIFEST_FILE" ] && _r=$(json_field "$MANIFEST_FILE" container_rootfs)
+    [ -n "$_r" ] || _r="/data/local/chroot-distro/ubuntu"
+    printf '%s\n' "$_r"
+}
+
+rt_busybox() {
+    for _b in /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox; do
+        [ -x "$_b" ] && { printf '%s\n' "$_b"; return 0; }
+    done
+    command -v busybox 2>/dev/null && return 0
+    return 1
+}
+
+rt_is_ro() { # $1=挂载点 -> 0=确实 ro
+    _f=$(grep " $1 " /proc/mounts 2>/dev/null | head -n1 | cut -d' ' -f4)
+    case ",$_f," in *,ro,*) return 0 ;; esac
+    return 1
+}
+
+rt_make_ro() { # $1=挂载点
+    # toybox 的 `-o bind,ro` 与 `-o remount,ro,bind` 都是**静默失败**（实测仍 rw），
+    # 只有 busybox 的 `remount,ro,bind` 真的生效 → 必须挂完再验，不信返回值。
+    mount -o remount,ro,bind "$1" 2>/dev/null || true
+    rt_is_ro "$1" && return 0
+    mount -o remount,ro "$1" 2>/dev/null || true
+    rt_is_ro "$1" && return 0
+    _bb=$(rt_busybox) || _bb=""
+    if [ -n "$_bb" ]; then
+        "$_bb" mount -o remount,ro,bind "$1" 2>/dev/null || true
+        rt_is_ro "$1" && return 0
+    fi
+    return 1
+}
+
+rt_bind() { # $1=src $2=dst $3=ro|rw
+    _s=$1; _d=$2; _m=$3
+    mkdir -p "$_s" "$_d" 2>/dev/null || true
+    if ! mount -o bind "$_s" "$_d" 2>/dev/null; then
+        log "runtime: bind 失败（$_s → $_d）"
+        return 1
+    fi
+    if [ "$_m" = "ro" ]; then
+        if ! rt_make_ro "$_d"; then
+            log "runtime: ⚠️ 只读挂载失败（$_d 仍是 rw）—— 版本层完整性保护缺失，记在 run/layers-rw"
+            : >"$RUN_DIR/layers-rw" 2>/dev/null || true
+        fi
+    fi
+    return 0
+}
+
+rt_mounts_down() {
+    _r=$(rt_container_rootfs)
+    [ -n "$_r" ] || return 0
+    for _m in "$_r$RT_HOME_IN" "$_r$RT_DSH" "$_r$RT_NODE" "$_r/dev/pts" "$_r/dev" "$_r/proc"; do
+        umount -l "$_m" 2>/dev/null || true
+    done
+    return 0
+}
+
+rt_mounts_up() { # $1=rootfs
+    _r=$1
+    rt_bind "$NODE_DIR" "$_r$RT_NODE" ro || return 1
+    rt_bind "$(dsh_dir_of "$_layer")" "$_r$RT_DSH" ro || return 1
+    rt_bind "$DSH_HOME_HOST" "$_r$RT_HOME_IN" rw || return 1
+    mount -t proc proc "$_r/proc" 2>/dev/null || true    # 已被别人挂上是常态，不算错
+
+    mount -t tmpfs tmpfs "$_r/dev" 2>/dev/null || { log "runtime: 挂 tmpfs 到 $_r/dev 失败"; return 1; }
+    mkdir -p "$_r/dev/pts" "$_r/dev/shm" 2>/dev/null || true
+    for _n in null:1:3 zero:1:5 full:1:7 random:1:8 urandom:1:9 tty:5:0 ptmx:5:2; do
+        _nm=${_n%%:*}; _rest=${_n#*:}; _mj=${_rest%%:*}; _mn=${_rest#*:}
+        if [ ! -c "$_r/dev/$_nm" ]; then
+            rm -f "$_r/dev/$_nm" 2>/dev/null
+            mknod "$_r/dev/$_nm" c "$_mj" "$_mn" 2>/dev/null || log "runtime: mknod $_nm 失败"
+        fi
+        chmod 666 "$_r/dev/$_nm" 2>/dev/null || true
+    done
+    ln -sf /proc/self/fd "$_r/dev/fd" 2>/dev/null || true
+    ln -sf /proc/self/fd/0 "$_r/dev/stdin" 2>/dev/null || true
+    ln -sf /proc/self/fd/1 "$_r/dev/stdout" 2>/dev/null || true
+    ln -sf /proc/self/fd/2 "$_r/dev/stderr" 2>/dev/null || true
+    mount -t devpts devpts "$_r/dev/pts" 2>/dev/null || { log "runtime: 挂 devpts 失败（PTY 会不可用）"; return 1; }
+    return 0
+}
+
+# 启动行搬运工：只把含 http://127.0.0.1: 的那一行写到结果 fifo，然后把剩余输出吸干。
+# 吸干是为了不让 dsh 的下一次写撞 EPIPE；全程不落盘 —— token 不进任何文件（ADR-022）。
+rt_reader() { # $1=数据 fifo $2=结果 fifo
+    exec 3<"$1" || exit 1
+    while IFS= read -r _l <&3; do
+        case $_l in
+            *http://127.0.0.1:*) printf '%s\n' "$_l" >"$2" 2>/dev/null; break ;;
+        esac
+    done
+    cat >/dev/null 2>&1 <&3
+}
+
+rt_parse_port() { printf '%s' "$1" | sed -n 's#.*127\.0\.0\.1:\([0-9][0-9]*\).*#\1#p' | head -n1; }
+rt_parse_token() { printf '%s' "$1" | sed -n 's#.*[?&]token=\([A-Za-z0-9._~-]*\).*#\1#p' | head -n1; }
+
+rt_fail() { # $1=原因
+    _p=$(pid_of)
+    if [ -n "$_p" ]; then
+        kill -TERM "-$_p" 2>/dev/null || kill -TERM "$_p" 2>/dev/null || true
+        sleep 1
+        kill -KILL "-$_p" 2>/dev/null || kill -KILL "$_p" 2>/dev/null || true
+    fi
+    rm -f "$PID_FILE" "$RUN_DIR/.boot.fifo" "$RUN_DIR/.boot.res" 2>/dev/null || true
+    [ "$DSH_RUNTIME" = "real" ] && rt_mounts_down
+    log "runtime: 起不来（$1）"
+    return 1
+}
+
+rt_real_start() {
+    _r=$(rt_container_rootfs)
+    if [ ! -d "$_r" ]; then
+        log "runtime: 容器 rootfs 不存在（$_r）—— 先 chroot-distro install <distro>"
+        return 1
+    fi
+    if [ ! -x "$_r/bin/sh" ]; then
+        log "runtime: $_r 不像 rootfs（缺 /bin/sh）"
+        return 1
+    fi
+    mkdir -p "$DSH_HOME_HOST" 2>/dev/null || true
+    chmod 700 "$DSH_HOME_HOST" 2>/dev/null || true
+    mkdir -p "$_r$RT_NODE" "$_r$RT_DSH" "$_r$RT_HOME_IN" "$_r/proc" 2>/dev/null || true
+
+    rt_mounts_down                     # 清上一次的残留（幂等）
+    rm -f "$RUN_DIR/layers-rw" 2>/dev/null || true
+    rt_mounts_up "$_r" || { rt_mounts_down; return 1; }
+
+    rm -f "$RUN_DIR/.boot.fifo" "$RUN_DIR/.boot.res" 2>/dev/null || true
+    ( umask 077; mkfifo "$RUN_DIR/.boot.fifo" "$RUN_DIR/.boot.res" ) 2>/dev/null || {
+        log "runtime: mkfifo 失败"; rt_mounts_down; return 1
+    }
+
+    _dshlog="$LOG_DIR/dsh.log"
+    : >"$_dshlog" 2>/dev/null || true
+    chmod 600 "$_dshlog" 2>/dev/null || true
+
+    # pid 由子 shell 自己写（setsid 可能会 fork，$! 不一定等于 dsh 的 pid）
+    setsid sh -c 'printf "%s\n" "$$" >"$1"; shift; exec "$@"' sh "$PID_FILE" \
+        chroot "$_r" /usr/bin/env -i \
+        PATH="$RT_NODE/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+        HOME=/root DSH_HOME="$RT_HOME_IN" TMPDIR=/tmp SHELL=/bin/bash LANG=C.UTF-8 TERM=xterm-256color \
+        "$RT_DSH/bin/dsh" web --port 0 --no-open --host 127.0.0.1 \
+        </dev/null >"$RUN_DIR/.boot.fifo" 2>>"$_dshlog" &
+    rt_reader "$RUN_DIR/.boot.fifo" "$RUN_DIR/.boot.res" &
+
+    _line=$(timeout "$RT_READY_TIMEOUT" sh -c 'IFS= read -r l <"$1" && printf "%s" "$l"' sh "$RUN_DIR/.boot.res" 2>/dev/null)
+    if [ -z "$_line" ]; then
+        rt_fail "dsh 在 ${RT_READY_TIMEOUT}s 内没报出端口（看 $LOG_DIR/dsh.log）"
+        return 1
+    fi
+
+    _port=$(rt_parse_port "$_line")
+    _token=$(rt_parse_token "$_line")
+    case $_port in ''|*[!0-9]*) rt_fail "启动行里没解析出端口"; return 1 ;; esac
+    if [ "$_port" -lt 1 ] || [ "$_port" -gt 65535 ]; then rt_fail "端口越界：$_port"; return 1; fi
+    if [ -z "$_token" ]; then rt_fail "启动行里没有 token"; return 1; fi
+
+    _pid=$(pid_of)
+    if [ -z "$_pid" ] || ! kill -0 "$_pid" 2>/dev/null; then rt_fail "dsh 进程没起来"; return 1; fi
+
+    _tmp="$RUN_DIR/.dsh.json.tmp"
+    ( umask 077
+      printf '{"schema":1,"port":%s,"url":"http://127.0.0.1:%s/","token":"%s","pid":%s,"layer":"%s","runtime":"real","started_at":"%s"}\n' \
+          "$_port" "$_port" "$_token" "$_pid" "$_layer" "$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo -)" >"$_tmp" )
+    chmod 600 "$_tmp" 2>/dev/null || true
+    if ! mv "$_tmp" "$RUN_DIR/dsh.json" 2>/dev/null; then rt_fail "写 run/dsh.json 失败"; return 1; fi
+
+    log "runtime: dsh 就绪 pid=$_pid port=$_port（token 只进 run/dsh.json，不进日志）"
+    return 0
+}
+
 runtime_start() {
     if [ "$DSH_RUNTIME" = "fake" ]; then
         setsid sleep 600 >/dev/null 2>&1 &
         echo $! >"$PID_FILE"
         return 0
     fi
-    log "runtime=real 尚未实现（要 bind 两层 + 从 stdout 解析端口）"
-    return 30
+    rt_real_start
 }
 
 runtime_stop() {
     _p=$(pid_of)
-    [ -n "$_p" ] || return 10
-    kill -TERM "$_p" 2>/dev/null || true
+    if [ -z "$_p" ]; then
+        [ "$DSH_RUNTIME" = "real" ] && rt_mounts_down
+        return 10
+    fi
+    # 先按进程组杀（setsid 起的会话首进程 = pgid），再兜底单杀
+    kill -TERM "-$_p" 2>/dev/null || kill -TERM "$_p" 2>/dev/null || true
     _i=0
     while [ "$_i" -lt 10 ]; do
         kill -0 "$_p" 2>/dev/null || break
         sleep 1
         _i=$((_i + 1))
     done
-    kill -0 "$_p" 2>/dev/null && { kill -KILL "$_p" 2>/dev/null || true; sleep 1; }
+    kill -0 "$_p" 2>/dev/null && { kill -KILL "-$_p" 2>/dev/null || kill -KILL "$_p" 2>/dev/null || true; sleep 1; }
     kill -0 "$_p" 2>/dev/null && return 20
-    rm -f "$PID_FILE"
+    rm -f "$PID_FILE" "$RUN_DIR/dsh.json" 2>/dev/null || true
+    [ "$DSH_RUNTIME" = "real" ] && rt_mounts_down
     return 0
 }
 
@@ -215,7 +421,7 @@ do_start() {
         log "Node 层未就绪（base/node）：先 bootstrap"; mark "START payload-missing"; return 30
     fi
     version_gate || return $?
-    runtime_start || { mark "START runtime-failed"; return 30; }
+    runtime_start || { mark "START runtime-failed"; return 60; }
     log "started (pid $(pid_of), dsh=$_layer)"; mark "START ok"; return 0
 }
 
@@ -250,6 +456,13 @@ do_status() {
     printf 'manifest  : %s\n' "${MANIFEST_FILE:-missing}"
     printf 'version   : %s\n' "$(version_state)"
     printf 'dsh       : %s\n' "$_proc"
+    printf 'runtime   : %s\n' "$DSH_RUNTIME"
+    if [ -f "$RUN_DIR/layers-rw" ]; then
+        printf 'layers    : rw（只读挂载失败：版本层完整性保护缺失，见 ADR-009/ADR-029）\n'
+    fi
+    if [ -f "$RUN_DIR/dsh.json" ]; then
+        printf 'port      : %s\n' "$(json_num "$RUN_DIR/dsh.json" port)"
+    fi
     printf 'bootstrap : %s\n' "$(boot_state)"
     printf 'mode      : local\n'
     mark "STATUS ok"; return 0

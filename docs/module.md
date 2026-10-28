@@ -59,8 +59,11 @@ init → KernelSU/Magisk → /data/adb/modules/<id>/service.sh（钩子）
                               └─ exec /data/local/dsh/service.sh boot
                                    ├─ bootstrap（缺 payload → exit 30；有 payload → 解包/校验/切指针）
                                    ├─ version_gate（ADR-026：decide 判定，低于 floor 回落 baked）
-                                   └─ runtime_start（真正的容器启动，尚未实现）
+                                   └─ runtime_start（real：bind 两层 → chroot 起 dsh web → 写 run/dsh.json；ADR-029）
 ```
+
+> 退出码：`30` = payload 缺失/校验失败（缺件）；`60` = 运行时未就绪（容器起不来、或 dsh 没在超时内报出端口）。
+> 分开的理由：`status` 与 UI 要能一眼区分「还没投递」和「投递了但起不来」—— 混成一个码就只能猜。
 
 ## 4. 卸载
 

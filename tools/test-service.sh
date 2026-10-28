@@ -256,6 +256,29 @@ run_has "闸门恢复 ok" 0 "version-ok" SVC_RUN start
 SVC_RUN stop >/dev/null 2>&1
 
 echo
+echo "== 11) real 运行时（P2）：失败路径必须如实报 60，不假装成功"
+SVC_RUN stop >/dev/null 2>&1
+_o=$(DSH_RUNTIME=real DSH_CONTAINER_ROOTFS=/nonexistent-rootfs sh "$SVC" start 2>&1); _rc=$?
+if [ "$_rc" -eq 60 ] && printf '%s' "$_o" | grep -q 'rootfs 不存在'; then
+    _ok "rootfs 不存在 -> 60"
+else
+    _no "rootfs 缺失应 60" "实得 rc=$_rc：$_o"
+fi
+mkdir -p "$T/notroot"
+_o=$(DSH_RUNTIME=real DSH_CONTAINER_ROOTFS="$T/notroot" sh "$SVC" start 2>&1); _rc=$?
+if [ "$_rc" -eq 60 ] && printf '%s' "$_o" | grep -q '不像 rootfs'; then
+    _ok "目录不是 rootfs -> 60"
+else
+    _no "非 rootfs 应 60" "实得 rc=$_rc：$_o"
+fi
+if [ -f "$T/run/dsh.json" ]; then
+    _no "失败时不该写 run/dsh.json" "$(cat "$T/run/dsh.json")"
+else
+    _ok "失败时没有留下 run/dsh.json"
+fi
+run_has "status 报 runtime" 0 "runtime   : fake" SVC_RUN status
+
+echo
 printf '结果: %d 通过 / %d 失败\n' "$PASS" "$FAIL"
 rm -rf "$T" "$PKG" 2>/dev/null || true
 [ "$FAIL" -eq 0 ]
