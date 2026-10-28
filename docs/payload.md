@@ -60,19 +60,19 @@ dsh-<baked>.tar.gz     + dsh.json
 
 ```bash
 python3 tools/build-payload.py --kind node --version 24.21.0 --pnpm 11.28.5 --stage /path/to/node-stage
-python3 tools/build-payload.py --kind dsh  --baked 0.2.0-rc.2 --stage /path/to/dsh-stage
-python3 tools/build-payload.py --verify build/dsh-0.2.0-rc.2.tar.gz --manifest build/dsh.json
+python3 tools/build-payload.py --kind dsh  --baked 0.2.1-rc.4 --stage /path/to/dsh-stage
+python3 tools/build-payload.py --verify build/dsh-0.2.1-rc.4.tar.gz --manifest build/dsh.json
 python3 tools/build-payload.py --selftest        # 两层各自：确定性 + 校验 + 篡改检测
 ```
 
-**本基线实际产物（2026-10-19）**：
+**本基线实际产物（node 层 2026-10-19 烘；dsh 层 2026-10-28 烘，随台账 `seq=2`）**：
 
 | 层 | 归档 | 压缩后 | 解压后 | 内容 |
 |---|---|---|---|---|
 | node | `node-24.21.0.tar.gz` | 60.4 MiB | 227 MiB | Node 官方 tarball + pnpm 11.28.5 |
-| dsh | `dsh-0.2.0-rc.2.tar.gz` | 117.0 MiB | 514 MiB | 25,974 个文件（干净 `npm i -g` 树） |
+| dsh | `dsh-0.2.1-rc.4.tar.gz` | 154.0 MiB | 752 MiB | 68,202 条目 / 63,045 文件（干净 `npm i -g` 树 + `bin/dsh` wrapper） |
 
-node 层独立重建两次字节相同；dsh 层做了两次独立 `npm i -g`，树哈希相同，tar 由该树确定性构建。
+node 层独立重建两次字节相同；dsh 层同样做了两次独立 `npm i -g`（2026-10-28：rc.4，68,198 项树清单逐字节相同），tar 由该树确定性构建。
 
 两层的 sha256 以 `build/{node,dsh}.json` 与 [manifest.example.json](../baseline/manifest.example.json) 的 `layers` 为准（同一组值，不在这里重复）。
 

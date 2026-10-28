@@ -12,7 +12,7 @@
 | Node.js | **24.21.0（烘焙值）** | 官方 `linux-arm64` 二进制即 glibc，可完全 pin；与上游 `primary-runtime` pin 对齐（ADR-011） | 【已验证】官方 tarball sha256；`node -v` = v24.21.0；开发容器 24.19.0 只是验证环境 |
 | npm | 11.19.0（随 Node 24.21.0） | 只需用于一次性安装/升级 | 【已验证】`npm -v` = 11.19.0 |
 | pnpm | **11.28.5** | DSH **运行时真的在用 pnpm**；与上游 `packageManager` pin 对齐（10→11 横跨 `allowBuilds` / `strictDepBuilds` 语义） | 【已验证】registry sha512；`pnpm -v` = 11.28.5 |
-| DSH | **@deepseek-ai/dsh@0.2.0-rc.2** | DSHA 内跑的就是它；本容器安装的也是它 | 【已验证】`package.json` + `APP_VERSION=…-dsh0.2.0-rc.2` |
+| DSH | **@deepseek-ai/dsh@0.2.1-rc.4**（baked = 台账 `seq=2`） | 壳内置的基线；DSHA 里跑的仍是 `0.2.0-rc.2`（并存，见 ADR-004） | 【已验证】`dsh --version` = `0.2.1-rc.4`；tag `dsh-v0.2.1-rc.4` / commit `504a01a9` |
 | 容器运行时 | chroot-distro 模块（release 2.1.0 骨架 + main 分支脚本） | 原厂内核 + LKM 即可运行 | 【已验证】见 research §3.1 |
 | 容器路径 | `/data/local/chroot-distro/<distro>/` | chroot-distro 默认 | 【已验证】源码常量 |
 
@@ -133,19 +133,19 @@ dsh-<baked>.tar.gz  + dsh.json      # @deepseek-ai/dsh 完整树 + bin wrapper
 
 1. 建 Ubuntu 24.04 chroot（`chroot-distro install ubuntu` 选 noble）
 2. 容器内装 **Node 24.21.0**（官方 arm64 二进制）+ **pnpm 11.28.5**（上游 pin，见 ADR-011 决定 A.4；开发容器是 24.19.0 / 10.34.5，**不要照抄**）
-3. `npm i -g @deepseek-ai/dsh@0.2.0-rc.2 --prefix <stage>`（或复用已按本基线验证过的安装树）
+3. `npm i -g @deepseek-ai/dsh@0.2.1-rc.4 --prefix <stage> --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs`
+   （`--allow-scripts` **不是可选项**：npm 11 默认拦装脚本，漏了就得到一棵没有 `node-pty`/`koffi` 二进制的树，而树哈希照样自洽）
 4. **验证四件事**（任何一条不过就不要继续）：
    - [x] `node-pty` 能起 PTY（**✅ 2026-10 于 proot 容器实测通过**；chroot 里用 `tools/verify-pty.sh` 复验，本机真 chroot 拿到 `/dev/pts/4`）
-   - [x] `dsh --version` = `0.2.0-rc.2`（2026-10-19 在 Node 24.21.0 下实测）
+   - [x] `dsh --version` = `0.2.1-rc.4`（2026-10-28 在 Node 24.21.0 下实测）
    - [x] **`dsh --profile sdk` 的 stdio JSON-RPC 握手**（**✅ 2026-10-28 真 chroot 实测**：`initialize`→`serverInfo`
      `deepseek-harness-sdk-runtime 0.0.1`，全往返 1221 ms；用 `tools/verify-sdk-protocol.sh` 复验 —— 见 [ADR-028](./decisions.md)）
    - [x] `dsh web --port 0` 的端口从启动行读出（2026-10-16 实测 39895，见 [research §6.2](./research.md)）
    - [ ] 容器内 DNS 与 TLS 正常（`/etc/resolv.conf`、CA bundle）
 
-> ⚠️ **版本分叉（待决策，别默默改）**：上面 137-139 行记的是**烘焙基线**（Node 24.21.0 / dsh 0.2.0-rc.2，台账 `seq=1`）。
-> 2026-10-28 的 P1 实测是在 **Node 24.22.1 / dsh 0.2.1-rc.4** 上做的（npm `next` 通道，ADR-022 允许 RC）。
-> 要把 baked 抬到 `0.2.1-rc.4`，必须按 §7 追加 `seq=2` 并重打 payload；**先抬 floor 会自动停用低于它的用户层**。
-> 在两件事都做完之前，P1 的证据只说明“这条路成立”，**不**说明“烘焙基线已经是 rc.4”。
+> ✅ **已拍板（2026-10-28）**：baked 已抬到 `0.2.1-rc.4`（台账 `seq=2`），floor 同值；Node 仍 **24.21.0**（只换 dsh 层，node 层不重烘）。
+> P1 先在 Node 24.22.1 上测到 1221 ms，**对齐 Node 24.21.0 后复测 1252 ms**，`verify-sdk-protocol.sh` 原样通过。
+> 抬升后必须用 **1.0.2.2 的 payload**：rc.2 的旧层会被 floor 挡在闸门外（exit 50）。
 5. 打 payload：`tools/build-payload.py --kind node|dsh`（确定性 gzip；⛔ 不用 zstd，见 ADR-013 决定 C），每层出 `<kind>.json`（sha256 + size）
 6. 写壳（manifest + wrapper + dsh-update + service.sh + broker.py）
 7. 端到端：解包 → 校验 → 起 DSH → 壳发布端口 → 平板访问（记得 `--trusted-host`）

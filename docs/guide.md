@@ -1,6 +1,6 @@
 # DSH 容器化替代 DSHA —— 项目指引
 
-> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ **vendor 基准线**（ADR-027）+ 模块 **1.0.2.1**）。
+> 状态：**设计已定稿，实施已开工**（2026-10-17：模块身份定稿 + 产物生成器收口 + 首次提交；2026-10-18：版本号分层（ADR-025）+ 版本闸门接线（ADR-026）；2026-10-19：**payload 首烘**（Node 24.21.0 + pnpm 11.28.5 + DSH 0.2.0-rc.2）+ **vendor 基准线**（ADR-027）+ 模块 **1.0.2.1**；2026-10-28：**P1 协议闭环**（ADR-028）+ 基线抬到 **0.2.1-rc.4**（台账 `seq=2`，floor 同值）+ 模块 **1.0.2.2**）。
 > 阶段二（自定义内核 / Droidspaces）已按你的决定裁掉，仅在 `docs/pitfalls.md` 里留作"进阶与触发条件"。
 > 本文档集是给"未来的你"看的：过一段时间回来，只读本文件就能恢复全部上下文。
 
@@ -22,8 +22,8 @@
 | **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | **版本闸门接线（ADR-026）** | ✅ 2026-10-18：`decide` 纯函数（19 条向量 · 5 实现 95/95）· `service.sh start` 前判定 · 低于 floor **回落 baked** · 新退出码 **50** · 壳契约 43 条（dash/mksh） |
 | **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 确定性 + 安装模拟 **22/22**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy）。2026-10-19：13 条目，内置 `bin/chroot-distro`（GPLv3）+ 随包许可证 |
-| **vendor 基准线（ADR-027）** | ✅ 2026-10-19：chroot-distro 脚本原样 + GPLv3；DSH tarball + 538 包 shrinkwrap + 29,280 项 `tree.sha256`（两次独立安装树哈希相同）；`tools/vendor-check.py` 进 CI；仓库 MIT / 组件 GPLv3 双声明 |
-| **payload 首烘（两层）** | ✅ 2026-10-19：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.0-rc.2.tar.gz` 117.0 MiB（干净树 / 25,974 文件）；dsh 两次独立安装树哈希相同；**真实归档离线自举 89 s → status ok (baked)**（[payload.md](./payload.md) §4） |
+| **vendor 基准线（ADR-027）** | ✅ 2026-10-19：chroot-distro 脚本原样 + GPLv3；DSH tarball + 616 包 shrinkwrap + **68,198 项** `tree.sha256`（两次独立安装树哈希相同；2026-10-28 随 rc.4 整份重做）；`tools/vendor-check.py` 进 CI；仓库 MIT / 组件 GPLv3 双声明 |
+| **payload（两层）** | ✅ 2026-10-19 首烘 / **2026-10-28 换 dsh 层**：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.1-rc.4.tar.gz` 154.0 MiB（68,202 条目 / 63,045 文件 / sha256 `7c31ca6a…`）；两次独立安装树哈希相同；**真实归档离线自举 89 s → status ok (baked)**（[payload.md](./payload.md) §4） |
 | **P1 载体（sdk profile）** | ✅ **协议闭环**（2026-10-28，[ADR-028](./decisions.md)）：`dsh --profile sdk` 走 **stdio JSON-RPC** · `initialize`→`serverInfo` 全往返 **1221 ms** · 设备探针 `verify-sdk-protocol.sh` + CI 契约 `test-sdk-protocol.sh` **20 条**（dash/mksh） |
 | 阻塞项 | **无** |
 
@@ -35,20 +35,19 @@
    Python / POSIX sh / Node 三实现逐条一致，`python3 tools/check-gate.py` 全绿；变异测试证明这道检查**会红**。
    真机自检脚本 [tools/verify-gate-device.sh](../tools/verify-gate-device.sh) 保留（真机 76/95 待按新版重跑）。
 2. ~~壳骨架（service.sh + dsh-ctl）~~ ✅ **已完成（2026-10-18）**：六条契约 + 两层 bootstrap + 版本闸门接线；契约 43 + 11 条（dash/mksh）。
-3. ~~模块打包（引导器 < 1 MB）~~ ✅ **已完成（2026-10-18）**：13 条目 · 安装模拟 22/22 · 当前 **1.0.2.1 / versionCode 3**（内置 chroot-distro，GPLv3 随包）。
+3. ~~模块打包（引导器 < 1 MB）~~ ✅ **已完成（2026-10-18）**：13 条目 · 安装模拟 22/22 · 当前 **1.0.2.2 / versionCode 4**（内置 chroot-distro，GPLv3 随包）。
 4. ~~payload 首烘~~ ✅ **已完成（2026-10-19）**：Node **24.21.0** + pnpm **11.28.5** + DSH **0.2.0-rc.2**；
    两层 ≈177 MiB（解压 ≈741 MiB）；真实归档离线自举 **89 s**（26k 文件），`status` 报 `ok (baked)`。
 5. ~~P1 载体：`dsh --profile sdk` 的 stdio JSON-RPC~~ ✅ **已完成（2026-10-28，ADR-028）**：`initialize`→`serverInfo`
    全往返 **1221 ms**（Ubuntu 24.04.3 chroot / Node 24.22.1 / dsh 0.2.1-rc.4）；设备探针
    [tools/verify-sdk-protocol.sh](../tools/verify-sdk-protocol.sh)（退出码 0/1/2）+ CI 契约
    [tools/test-sdk-protocol.sh](../tools/test-sdk-protocol.sh)（**20 条**，dash/mksh 各一遍，假 dsh 驱动，不联网不装真包）。
-   ⚠️ 这套版本组合**尚未进烘焙台账**（台账仍是 `seq=1` / `baked=0.2.0-rc.2`）；要不要抬 baked 走 §7 的记账纪律，
-   **不是**改一行 `dsh.env` 的事。
+   ✅ 2026-10-28 **已进台账**：`seq=2` / `baked=0.2.1-rc.4`（floor 同值），Node 对齐 **24.21.0** 后复测 1252 ms 通过（[baseline §6](./baseline.md)）。
 6. **下一步：`runtime_start` 的 real 分支（= P2，`web` 载体）** —— bind 两层进 chroot → `dsh web --port 0` → 从 stdout 抓
    `http://127.0.0.1:<port>/?token=…` → 原子写 `run/dsh.json`。做完这一步，`start` 才算真的把 DSH 跑起来
    （现在 real 分支会如实报 30，fake 分支只用于契约测试）。
    与 P1 的关系见 [ADR-028](./decisions.md) 决定 B：两条载体共用 `ProcessHost`，就绪判据不同（`serverInfo` vs 启动行 URL）。
-7. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.2.1** → 投递 `payload-1.0.2.1` → `bootstrap --offline` →
+7. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.2.2** → 投递 `payload-1.0.2.2` → `bootstrap --offline` →
    `status` 应显示 node/layer/version 全 ok，`start` 仍报 30（等第 6 步）。
 
 **一句话记住三条硬约束**：① 只做 `local` + `lan`，公网不碰；② 与 DSHA **并存但绝不共用 `DSH_HOME`**；③ 固件只抽**内核侧四件套**，永不整包刷、永不恢复 `data`。

@@ -9,6 +9,12 @@
       "baked": "0.2.0-rc.2",
       "date": "2026-10-17",
       "note": "首个基线：DSHA 内跑的就是它（APP_VERSION=dsh0.2.0-rc.2）"
+    },
+    {
+      "seq": 2,
+      "baked": "0.2.1-rc.4",
+      "date": "2026-10-28",
+      "note": "P1（sdk profile / stdio JSON-RPC）定案后的基线抬升（ADR-028）。取 npm next 通道的 rc.4（ADR-022 只追 RC）；Node 对齐到 24.21.0（node 层不重烘，只换 dsh 层）；npm 11.19.0 + pnpm 11.28.5；npm 11 默认拦装脚本，必须显式 --allow-scripts=node-pty,koffi,protobufjs,@google/genai,@deepseek-ai/dsh-subprocess-local，否则层里 PTY 是死的。真机复验：PTY 双通道 OK（/dev/pts/0）、P1 握手 1252 ms。"
     }
   ]
 }

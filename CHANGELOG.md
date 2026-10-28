@@ -2,6 +2,22 @@
 
 版本号与 `module.prop` 的 `version` 一致（[规范](docs/versioning.md)）。`update.json` 的 `changelog` 指向本文件。
 
+## v1.0.2.2（未发布）
+
+- **基线抬升：DSH 0.2.0-rc.2 → 0.2.1-rc.4（台账 `seq=2`，2026-10-28）** —— ADR-022 只追 RC，取 npm `next` 通道
+  - `dsh-0.2.1-rc.4.tar.gz` **154.0 MiB**（161,532,738 B）/ 68,202 条目 / sha256 `7c31ca6a…155fc6`；解包 752 MiB，`dsh/node_modules` 194 个顶层包
+  - **Node 对齐到 24.21.0**（`node` 层不重烘、sha256 与清单不变，只换 dsh 层）+ `pnpm 11.28.5` + `npm 11.19.0`
+  - ⚠️ **npm 11 默认拦装脚本**：不显式 `--allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs`，
+    装出来的树**没有 `node-pty` / `koffi` 的二进制**——而树哈希照样自洽。本次先踩后修（第一版树 PTY 是死的），已写进 `vendor/dsh/SOURCE.json` 的 `install` 字段
+  - `floor` 同步抬到 `0.2.1-rc.4`（模块未发布过，没有旧用户层被停用；一行改回即可降回 `0.2.0-rc.2`）
+  - `version` `1.0.2.1` → **`1.0.2.2`**（第 4 位 = 台账 seq 2）· `versionCode` 3 → **4**
+- **vendor 基准线整份重做（ADR-027）**
+  - `vendor/dsh/`：rc.4 tarball（25,132 B）+ 解包包体（20 文件）+ `npm-shrinkwrap.json`（237,268 B）+ `tree.sha256`（**68,198 项**，9.1 MiB，aggregate `d9f35ab2…`）
+  - **两次独立 `npm i -g` 后树清单逐字节相同**（这次是量出来的，不是声称的）；`tools/vendor-check.py --stage` 对已构建的层树同样通过
+  - 旧 rc.2 的 tarball 与 `package/` 已替换（git 历史保留）
+- **设备侧复验（Node 24.21.0 对齐后）**：`node-pty` 双通道 PTY OK（`/dev/pts/0`）· P1 握手 **1252 ms**（`initialize`→`serverInfo`→`shutdown`）· 全门禁 18 步绿（含 `vendor-check --stage`）
+- 文档：`baseline.md`（基线行 / 复现命令含 `--allow-scripts` / 分叉说明改为已拍板）、`payload.md` §4 产物表、`README` version 行、`guide.md` 进度表
+
 ## v1.0.2.1（未发布）
 
 - **P1 载体定案：`dsh --profile sdk` 的 stdio JSON-RPC（2026-10-28，ADR-028）**
@@ -12,8 +28,7 @@
     dash 与 mksh 各跑一遍；**不联网、不装 616 个包、不需要 root**
   - `.github/workflows/gate.yml` 新增两步；`docs/decisions.md` 增 ADR-028；`docs/guide.md` 进度表 + 下一步重排（real 分支降为 P2）；`docs/baseline.md` 复现清单加“sdk 握手”一项
   - `web` 载体（`--port 0` + 启动行 token URL）保留为 **P2**，与 P1 共用 `ProcessHost`，就绪判据不同；`start` 仍如实报 **30**
-  - ⚠️ **未抬基线**：台账仍是 `seq=1` / `baked=0.2.0-rc.2`；上面 1221 ms 的实测跑在 **Node 24.22.1 + dsh 0.2.1-rc.4** 上，
-    要进基线必须按 [baseline §7](docs/baseline.md) 追加 `seq=2` 并重打 payload（版本分叉说明见 baseline §6）
+  - 已是历史：基线在 **1.0.2.2** 里抬到了 `0.2.1-rc.4`（见上一条），本节的 1221 ms 是抬升前在 Node 24.22.1 上的首测
 - **vendor 基准线（2026-10-19）**：外部依赖拉进仓库，不再“构建时上游刚好是什么”
   - `vendor/chroot-distro/`：2.1.0+main.20251218 脚本（90 KB，**原样**）+ GPLv3 全文 + `SOURCE.json`
   - `vendor/dsh/`：`@deepseek-ai/dsh@0.2.0-rc.2` tarball + 解包包体 + `npm-shrinkwrap.json`（538 包精确版本 + integrity）+ `tree.sha256`（29,280 项逐文件清单；**两次独立安装树哈希相同**）
