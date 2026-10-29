@@ -9,6 +9,8 @@
   - `spec/errors.json` 多产一个 `lib/errors.sh`（shell 表）：设备上只有 mksh，没有 python / jq，JSON 吃不下
   - `dsh-ctl` 为 `diag` **跳过 cgroup 搬家**——只读契约优先于「入口该统一行为」
   - 新增 `tools/test-diag.sh`（**13 条**断言，dash + mksh 双端）并接进门禁；CI 从 18 步变 20 步
+  - **修打包漏装**：`lib/errors.sh` 原先没进 `ENTRIES` / 没被 `customize.sh` 复制 → 真机上 `diag` 只会 `rc=2`；
+    包 13 → **14 条目**，并加自测断言「装完 `diag` 能判读」守住这件事
 
 - **P2 闭环：`runtime_start` 的 real 分支（2026-10-28，ADR-029）** —— `start` 不再是 30，而是真的把 DSH 跑起来
   - 真机实测：`dsh web --port 0` 在 chroot 里起来后，stdout **首行**就是 `dsh web: http://127.0.0.1:<port>/?token=…`；

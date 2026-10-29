@@ -48,11 +48,12 @@ cp -f "$MODPATH/bin/service.sh" "$DSH_ROOT/service.sh" || _fail "复制 service.
 cp -f "$MODPATH/bin/dsh-ctl" "$DSH_ROOT/dsh-ctl" || _fail "复制 dsh-ctl 失败"
 cp -f "$MODPATH/bin/chroot-distro" "$DSH_ROOT/bin/chroot-distro" || _fail "复制 chroot-distro 失败"
 cp -f "$MODPATH/lib/semver-gate.sh" "$DSH_ROOT/lib/semver-gate.sh" || _fail "复制 semver-gate.sh 失败"
+cp -f "$MODPATH/lib/errors.sh" "$DSH_ROOT/lib/errors.sh" || _fail "复制 errors.sh 失败"
 cp -f "$MODPATH/manifest.json" "$DSH_ROOT/manifest.json" || _fail "复制 manifest.json 失败"
 cp -f "$MODPATH/licenses/chroot-distro/LICENSE" "$DSH_ROOT/licenses/chroot-distro/LICENSE" || _fail "复制 chroot-distro LICENSE 失败"
 cp -f "$MODPATH/licenses/chroot-distro/SOURCE.json" "$DSH_ROOT/licenses/chroot-distro/SOURCE.json" || _fail "复制 chroot-distro SOURCE.json 失败"
 chmod 0755 "$DSH_ROOT/service.sh" "$DSH_ROOT/dsh-ctl" "$DSH_ROOT/bin/chroot-distro"
-chmod 0644 "$DSH_ROOT/lib/semver-gate.sh" "$DSH_ROOT/manifest.json" "$DSH_ROOT/licenses/chroot-distro/LICENSE" "$DSH_ROOT/licenses/chroot-distro/SOURCE.json"
+chmod 0644 "$DSH_ROOT/lib/semver-gate.sh" "$DSH_ROOT/lib/errors.sh" "$DSH_ROOT/manifest.json" "$DSH_ROOT/licenses/chroot-distro/LICENSE" "$DSH_ROOT/licenses/chroot-distro/SOURCE.json"
 
 mkdir -p "$DSH_ROOT/state" "$DSH_ROOT/base" "$DSH_ROOT/inbox" "$DSH_ROOT/run" "$DSH_ROOT/log"
 chmod 0700 "$DSH_ROOT/run" "$DSH_ROOT/log" 2>/dev/null || true

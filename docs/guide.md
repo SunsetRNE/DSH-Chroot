@@ -21,7 +21,7 @@
 | **版本闸门（三实现 + 真机）** | ✅ **真机闭环**（2026-10-17）：mksh R59 · PJD110 / Android 16 · `RESULT ok 76/76`；Python / POSIX sh / Node 三实现同一张表（[versioning §9](./versioning.md)） |
 | **版本号分层（ADR-025）** | ✅ 2026-10-18：第 4 位 = 烘焙台账 `seq`（对着 `baked`，不对着 `floor`）· 三份真源各管一件事 · [tools/test-versioning.py](../tools/test-versioning.py) 20 条断言（含拒绝类） |
 | **版本闸门接线（ADR-026）** | ✅ 2026-10-18：`decide` 纯函数（19 条向量 · 5 实现 95/95）· `service.sh start` 前判定 · 低于 floor **回落 baked** · 新退出码 **50** · 壳契约 43 条（dash/mksh） |
-| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 确定性 + 安装模拟 **22/22**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy）。2026-10-19：13 条目，内置 `bin/chroot-distro`（GPLv3）+ 随包许可证 |
+| **模块打包（引导器包）** | ✅ 2026-10-18：`tools/build-module.py` · 确定性 + 安装模拟 **22/22**（[docs/module.md](./module.md)）· 首装失败已定位并修（A23：包根 `install.sh` 被判 legacy）。2026-10-19：13 条目，内置 `bin/chroot-distro`（GPLv3）+ 随包许可证。2026-10-28：**14 条目**（+`lib/errors.sh`）/ 自测 **24/24** |
 | **vendor 基准线（ADR-027）** | ✅ 2026-10-19：chroot-distro 脚本原样 + GPLv3；DSH tarball + 616 包 shrinkwrap + **68,198 项** `tree.sha256`（两次独立安装树哈希相同；2026-10-28 随 rc.4 整份重做）；`tools/vendor-check.py` 进 CI；仓库 MIT / 组件 GPLv3 双声明 |
 | **payload（两层）** | ✅ 2026-10-19 首烘 / **2026-10-28 换 dsh 层**：`node-24.21.0.tar.gz` 60.4 MiB · `dsh-0.2.1-rc.4.tar.gz` 154.0 MiB（68,202 条目 / 63,045 文件 / sha256 `7c31ca6a…`）；两次独立安装树哈希相同；**真实归档离线自举 89 s → status ok (baked)**（[payload.md](./payload.md) §4） |
 | **P1 载体（sdk profile）** | ✅ **协议闭环**（2026-10-28，[ADR-028](./decisions.md)）：`dsh --profile sdk` 走 **stdio JSON-RPC** · `initialize`→`serverInfo` 全往返 **1221 ms** · 设备探针 `verify-sdk-protocol.sh` + CI 契约 `test-sdk-protocol.sh` **20 条**（dash/mksh） |

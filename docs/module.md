@@ -20,6 +20,7 @@
 | `bin/dsh-ctl` | 唯一公开入口（ADR-019） | 755 |
 | `bin/chroot-distro` | 内置的 chroot-distro 引擎（GPLv3，原样，见 vendor/） | 755 |
 | `lib/semver-gate.sh` | 版本闸门的 POSIX sh 实现 | 644 |
+| `lib/errors.sh` | **报错表**（由 `spec/errors.json` 生成，`dsh-ctl diag` 判读用） | 644 |
 | `licenses/chroot-distro/LICENSE` | GPLv3 全文（内置组件合规） | 644 |
 | `licenses/chroot-distro/SOURCE.json` | 版本 / 来源 / sha256 | 644 |
 
@@ -41,7 +42,7 @@ KernelSU / Magisk 的安装器实际做的事：
 customize.sh（被安装器 source）
    ├─ 补可执行位：模块根 service.sh / uninstall.sh（安装器解包后统一设 0644）
    ├─ 拒绝降级（ADR-018：versionCode 严格小于已装 → abort）
-   ├─ 复制 bin/service.sh · bin/dsh-ctl · bin/chroot-distro · lib/semver-gate.sh · manifest.json → DSH_ROOT
+   ├─ 复制 bin/service.sh · bin/dsh-ctl · bin/chroot-distro · lib/{semver-gate,errors}.sh · manifest.json → DSH_ROOT
    ├─ 复制 licenses/chroot-distro/{LICENSE,SOURCE.json} → DSH_ROOT/licenses/
    ├─ chmod 0755 / 0644
    └─ 只建空目录 state/ base/ inbox/ run/ log（不碰已有数据，ADR-017 红线）
