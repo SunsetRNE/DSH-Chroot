@@ -46,10 +46,10 @@
   },
 
   "layers": {
-    "base/node": "sha256:168d59884706e272085d51490d86dc5fc72a2c4ead092d4251c409a068d0d606",
-    "base/dsh-0.2.1-rc.4": "sha256:7c31ca6a3e98e7ef3609df10437334a708be3ebeed8d894663aa636cb2155fc6"
+    "base/node": "sha256:dd9a6ca60e50402a828aca220c3493d7f383877f085c63fd561f3217a37ccf01",
+    "base/dsh-0.2.1-rc.4": "sha256:1265ce1d50a09afb0bd53ec1f5cb40316fffa4bd6788f1061c817b5abf089291"
   },
-  "_layers_note": "两层（2026-10-18 裁决）：base/node <- node-<ver>.tar.gz，base/dsh-<baked> <- dsh-<baked>.tar.gz；值是两 tarball 的 sha256（见 docs/payload.md）。active 只指向 dsh 层；重打 payload 必须同步更新这两行（release 模式会拒绝 REPLACE_ME）。",
+  "_layers_note": "两层（2026-10-18 裁决）：base/node <- node-<ver>.tar.gz，base/dsh-<baked> <- dsh-<baked>.tar.gz；值是两 tarball 的 sha256（见 docs/payload.md）。2026-10-29 重烘：同一 baked、同一输入，压缩器不同 → 值按新产物更新（模块 1.0.4.2）。active 只指向 dsh 层；重打 payload 必须同步更新这两行（release 模式会拒绝 REPLACE_ME）。",
 
   "runtime": {
     "dsh_cmd": "dsh",

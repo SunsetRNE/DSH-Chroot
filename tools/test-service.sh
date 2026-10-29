@@ -277,6 +277,12 @@ else
     _ok "失败时没有留下 run/dsh.json"
 fi
 run_has "status 报 runtime" 0 "runtime   : fake" SVC_RUN status
+run_has "没有运行态时说未在运行" 0 "（未在运行）" SVC_RUN status
+# 造一份"实际是 real"的运行记录：配置仍然是 fake，两句话都得出现
+mkdir -p "$T/run" 2>/dev/null || true
+printf '{"schema":1,"port":1,"runtime":"real"}\n' >"$T/run/dsh.json"
+run_has "配置与实际不一致时两个都报" 0 "（run/dsh.json: real）" SVC_RUN status
+rm -f "$T/run/dsh.json"
 
 echo
 printf '结果: %d 通过 / %d 失败\n' "$PASS" "$FAIL"

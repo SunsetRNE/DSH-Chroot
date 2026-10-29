@@ -350,7 +350,10 @@ rt_real_start() {
         HOME=/root DSH_HOME="$RT_HOME_IN" TMPDIR=/tmp SHELL=/bin/bash LANG=C.UTF-8 TERM=xterm-256color \
         "$RT_DSH/bin/dsh" web --port 0 --no-open --host 127.0.0.1 \
         </dev/null >"$RUN_DIR/.boot.fifo" 2>>"$_dshlog" &
-    rt_reader "$RUN_DIR/.boot.fifo" "$RUN_DIR/.boot.res" &
+    # 必须切断继承来的 fd：否则这个后台 reader 会一直占着调用者的 stdout，
+    # 让 `dsh-ctl start | tail` / `$(dsh-ctl start)` 这类用法永远等不到 EOF。
+    # （2026-10-29 实测踩到：命令"卡死"，其实 start 早已返回，是管道没关。）
+    rt_reader "$RUN_DIR/.boot.fifo" "$RUN_DIR/.boot.res" </dev/null >/dev/null 2>&1 &
 
     _line=$(timeout "$RT_READY_TIMEOUT" sh -c 'IFS= read -r l <"$1" && printf "%s" "$l"' sh "$RUN_DIR/.boot.res" 2>/dev/null)
     if [ -z "$_line" ]; then
@@ -437,6 +440,11 @@ do_stop() {
     log "stopped"; mark "STOP ok"; return 0
 }
 
+runtime_actual() { # 实际运行态取自 run/dsh.json（没有文件 = 没在跑）
+    [ -f "$RUN_DIR/dsh.json" ] || return 1
+    json_field "$RUN_DIR/dsh.json" runtime 2>/dev/null
+}
+
 do_status() {
     _layer=$(active_layer) || _layer=""
     if [ -z "$_layer" ]; then
@@ -456,7 +464,12 @@ do_status() {
     printf 'manifest  : %s\n' "${MANIFEST_FILE:-missing}"
     printf 'version   : %s\n' "$(version_state)"
     printf 'dsh       : %s\n' "$_proc"
-    printf 'runtime   : %s\n' "$DSH_RUNTIME"
+    _rt_act=$(runtime_actual) || _rt_act=""
+    if [ -n "$_rt_act" ]; then
+        printf 'runtime   : %s（run/dsh.json: %s）\n' "$DSH_RUNTIME" "$_rt_act"
+    else
+        printf 'runtime   : %s（未在运行）\n' "$DSH_RUNTIME"
+    fi
     if [ -f "$RUN_DIR/layers-rw" ]; then
         printf 'layers    : rw（只读挂载失败：版本层完整性保护缺失，见 ADR-009/ADR-029）\n'
     fi
@@ -651,7 +664,12 @@ do_diag() {
     echo "== 被测对象 =="
     printf 'root      : %s\n' "$DSH_ROOT"
     printf 'rootfs    : %s\n' "$_rf"
-    printf 'runtime   : %s\n' "$DSH_RUNTIME"
+    _rt_act=$(runtime_actual) || _rt_act=""
+    if [ -n "$_rt_act" ]; then
+        printf 'runtime   : %s（run/dsh.json: %s）\n' "$DSH_RUNTIME" "$_rt_act"
+    else
+        printf 'runtime   : %s（未在运行）\n' "$DSH_RUNTIME"
+    fi
     echo
     echo "== 证据 =="
 
@@ -674,10 +692,14 @@ do_diag() {
         # 2) /dev 可信  → E-L1C-DEV-001
         if [ -c "$_rf/dev/null" ]; then
             printf 'dev/null  : ✓ 字符设备\n'
+        elif [ ! -e "$_rf/dev/null" ]; then
+            diag_add E-L1C-DEV-001
+            printf 'dev/null  : ✗ 不存在（rootfs 的 /dev 是空的）—— 哈希再对，功能也是死的\n'
         else
             diag_add E-L1C-DEV-001
-            printf 'dev/null  : ✗ 不是字符设备（%s）—— 哈希再对，功能也是死的\n' \
-                "$(ls -ld "$_rf/dev/null" 2>/dev/null | cut -d' ' -f1)"
+            _dn_size=$(wc -c <"$_rf/dev/null" 2>/dev/null | tr -d ' ')
+            printf 'dev/null  : ✗ 是 %s、%s 字节，不是字符设备 —— 哈希再对，功能也是死的\n' \
+                "$(ls -ld "$_rf/dev/null" 2>/dev/null | cut -d' ' -f1)" "${_dn_size:-?}"
         fi
 
         # 3) devpts  → E-L1C-PTY-001

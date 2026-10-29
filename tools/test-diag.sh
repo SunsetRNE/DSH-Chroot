@@ -86,6 +86,12 @@ run_has "命中 SIG-NOT-ROOTFS" 1 "SIG-NOT-ROOTFS" D "$T/C"
 run_has "结论指向容器而不是 dsh" 1 "不是 dsh 的问题" D "$T/C"
 
 echo
+echo '== 3b) dev/null 整个不在：要说「不存在」，不能和「类型不对」混为一谈 =='
+mk_good "$T/D"
+rm -f "$T/D/rootfs/dev/null"
+run_has "缺文件时明说不存在" 1 "不存在（rootfs 的 /dev 是空的）" D "$T/D"
+
+echo
 echo '== 4) 只命中一条、没有签名：必须说「没登记」，不许硬凑结论 =='
 mk_good "$T/E"
 # 把 floor 抬到 installed 之上 → 版本闸门 deny below-floor → 只命中 E-L3S-VER-001。

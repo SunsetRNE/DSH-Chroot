@@ -70,9 +70,13 @@ python3 tools/build-payload.py --selftest        # 两层各自：确定性 + �
 | 层 | 归档 | 压缩后 | 解压后 | 内容 |
 |---|---|---|---|---|
 | node | `node-24.21.0.tar.gz` | 60.4 MiB | 227 MiB | Node 官方 tarball + pnpm 11.28.5 |
-| dsh | `dsh-0.2.1-rc.4.tar.gz` | 154.0 MiB | 752 MiB | 68,202 条目 / 63,045 文件（干净 `npm i -g` 树 + `bin/dsh` wrapper） |
+| dsh | `dsh-0.2.1-rc.4.tar.gz` | 153.7 MiB | 752 MiB | 68,143 条目（干净 `npm i -g` 树 + `bin/dsh` wrapper） |
 
 node 层独立重建两次字节相同；dsh 层同样做了两次独立 `npm i -g`（2026-10-28：rc.4，68,198 项树清单逐字节相同），tar 由该树确定性构建。
+
+> **2026-10-29 重烘**（同一 `baked`、同一输入、默认 epoch）：两层压缩后尺寸与上表一致（60.43 / 153.7 MiB），
+> **sha256 与旧值不同**——差异来自压缩器（zlib 版本）。运行时层哈希校验尚未接线（[module](./module.md)），
+> 故不影响启动；真值已按新产物更新，并按 versioning §11 抬到模块 **1.0.4.2**。
 
 两层的 sha256 以 `build/{node,dsh}.json` 与 [manifest.example.json](../baseline/manifest.example.json) 的 `layers` 为准（同一组值，不在这里重复）。
 

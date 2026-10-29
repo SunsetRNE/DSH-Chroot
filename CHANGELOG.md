@@ -2,7 +2,24 @@
 
 版本号与 `module.prop` 的 `version` 一致（[规范](docs/versioning.md)）。`update.json` 的 `changelog` 指向本文件。
 
-## v1.0.3.2（未发布）
+## v1.0.4.2（未发布）
+
+- **payload 重烘 + 真值同步（2026-10-29）** —— 原来的两层 tarball 已不在盘上，`manifest.layers` 却钉着旧字节
+  - 按官方输入重建：Node 24.21.0 官方 arm64 + pnpm 11.28.5 → **63,360,827 B（60.43 MiB）**（记录 60.4 MiB，一致）
+  - `npm i -g @deepseek-ai/dsh@0.2.1-rc.4`（616 包，带 `--allow-scripts`）→ **161,212,083 B（153.7 MiB）/ 68,143 条目**
+  - **哈希必然与旧值不同**：同一输入、同一默认 epoch 下压缩后尺寸分毫不差，差异来自压缩器（zlib 版本）。
+    运行时层哈希校验（`guards.verify_layer_hashes`）尚未接线，故不影响启动
+  - 按 [versioning §11](docs/versioning.md)：同一 `baked` 重打层**不记账**，抬第 3 位 → **1.0.4.2 / versionCode 6**
+  - 真机实测：`bootstrap --offline` → `start` → `http=200` / 37,971 B / `<title>DeepSeek Harness</title>`，
+    无 token → 401，`log/dsh.log` 里 0 处 token
+- **`status` 不许让配置冒充现实**：`runtime` 行同时报配置值与 `run/dsh.json` 里的实际值
+  （`fake（run/dsh.json: real）`），没在跑就写「未在运行」
+- **`diag` 把「不存在」和「类型不对」分开**：`dev/null` 缺失时明说「rootfs 的 /dev 是空的」，
+  存在时给出文件类型与字节数
+- **启动不再占着调用者的输出管道**：`rt_reader` 这个后台进程原先继承 stdout，
+  于是 `dsh-ctl start | tail` / `$(dsh-ctl start)` 永远等不到 EOF —— 看着像「命令卡死」，
+  实际 `start` 早已返回（2026-10-29 实测踩到）。现在它 `</dev/null >/dev/null 2>&1`
+- **契约 47 → 49 / 13 → 14**：新增「没有运行态时说未在运行」「配置与实际不一致时两个都报」「缺文件时明说不存在」
 
 - **`dsh-ctl diag` 上线：报错表从「人能看懂」变成「设备能判读」（2026-10-28，ADR-030 实现补充）** ——
   6 项只读证据 → 命中码 → 组合签名结论；零命中时明说「还没登记」，**不许硬凑**

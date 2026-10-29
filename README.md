@@ -53,7 +53,7 @@
 |---|---|
 | `id` | `Zodiac-Quill-Saga` |
 | `name` | `DSH Chroot` |
-| `version` | `1.0.3.2`（第 4 位 = 烘焙台账序号，`2` = 第 2 次烘焙 = DSH `0.2.1-rc.4`；见 [versioning §2](docs/versioning.md)） |
+| `version` | `1.0.4.2`（第 4 位 = 烘焙台账序号，`2` = 第 2 次烘焙 = DSH `0.2.1-rc.4`；见 [versioning §2](docs/versioning.md)） |
 
 为什么 id 与仓库名不一样 → [docs/versioning.md §8](docs/versioning.md)（"越少人看见的字段，越可以讲风格"）。
 
