@@ -9,7 +9,7 @@
 |---|---|
 | 容器 | Ubuntu **24.04.3 LTS (noble)**，干净体积 105 MB |
 | 运行时 | Node **24.21.0** + pnpm **11.28.5**（payload 两层：60.43 MiB / 153.7 MiB） |
-| DSH | **0.2.1-rc.4**（烘焙台账 `seq=2`）；`start` 起在 pid 22056 / port 40537 |
+| DSH | **0.2.1-rc.4**（烘焙台账 `seq=2`）；`start` 起在 `pid 22056` / `port 40537`（快照，每次启动端口不同） |
 | 端到端 | 无 token **401**；带 token **200 / 37,971 B / `<title>DeepSeek Harness</title>`** |
 | 自诊断 | `dsh-ctl diag` 六项证据全 ✓（`rc=0`） |
 
