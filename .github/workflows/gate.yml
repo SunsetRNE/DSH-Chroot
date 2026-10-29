@@ -56,6 +56,14 @@ jobs:
       - name: 报错文档与真源一致
         run: python3 tools/gen-errors.py --check
 
+      # diag 消费上面那张表：证据 -> 命中码 -> 组合签名（ADR-030）。
+      # 只读、不联网、不启容器；跑了它才知道「判读对不对」，而不只是「文档对不对」
+      - name: diag 判读契约测试（dash）
+        run: dash tools/test-diag.sh
+
+      - name: diag 判读契约测试（mksh）
+        run: mksh tools/test-diag.sh
+
       # 生成出来的单文件脚本本身也要能跑（dash + mksh 各跑一遍 76 条）
       - name: 单文件自检脚本可运行
         run: |

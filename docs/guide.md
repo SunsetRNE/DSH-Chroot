@@ -48,6 +48,9 @@
    以 `bind(ro)` 进 `/opt/dsh/{node,current}` → chroot 起 `dsh web --port 0` → 从 **stdout 启动行**取端口/token →
    原子写 `run/dsh.json`（0600）。真机端到端：`http=200` / 37,971 B / `<title>DeepSeek Harness</title>`，无 token → 401。
    三个坑写进 ADR-029：容器 `/dev` 是空的（`/dev/null` 竟是普通文件）、toybox 的只读 bind **静默失败**、`curl` 必须带超时。
+6.5 ~~报错表可判读：`dsh-ctl diag` 消费 `spec/errors.json`~~ ✅ **已完成（2026-10-28，ADR-030 实现补充）**：
+   6 项只读证据 → 命中码 → 组合签名；`lib/errors.sh` 由 `gen-errors.py` **同源**烘出（设备上只有 mksh，JSON 吃不下）；
+   只读契约下连 cgroup 搬家都不做。契约测试 [tools/test-diag.sh](../tools/test-diag.sh)（**13 条**，dash / mksh 各一遍）已进门禁。
 7. 真机复验（需要你操作 Root 管理器 / 终端）：装 **1.0.3.2** → 投递 `payload-1.0.3.2` → `bootstrap --offline` →
    `status` 应显示 node/layer/version 全 ok → `start` 应真的起来（`port` 那一行有值）；
    只想验运行时而不动真数据，跑 `sh tools/verify-runtime.sh <rootfs> <node层> <dsh层>`（18 条断言）。
@@ -83,7 +86,7 @@ DSH 换版本、容器运行时换实现、甚至内核被 OTA 覆盖回退 —�
 | 10 | [docs/versioning.md](./versioning.md) | **版本号与 module.prop 规范**（四位 version / versionCode / managedFeatures 真实语义 / 单一真源 / 命名分工） |
 | 11 | [docs/payload.md](./payload.md) | **payload 规范**：两层 / 四个文件 / 字段 / 确定性构建 / 五道校验链 |
 | 12 | [docs/module.md](./module.md) | **模块包规范**：包内布局 / 安装与开机路径 / 卸载策略 / 构建与自测 |
-| 13 | [docs/errors.md](./errors.md) | **报错与定位**：11 条错误码（分层命名）+ 4 个组合签名；真源 `spec/errors.json`，文档由脚本生成 |
+| 13 | [docs/errors.md](./errors.md) | **报错与定位**：11 条错误码（分层命名）+ 4 个组合签名；真源 `spec/errors.json`，文档由脚本生成；`dsh-ctl diag` 可按签名直接判读 |
 | 13 | [baseline/manifest.example.json](../baseline/manifest.example.json) · [baseline/module.prop.example](../baseline/module.prop.example) | 闸门 manifest 模板、module.prop 生成结果、模块包钩子模板 |
 
 ---

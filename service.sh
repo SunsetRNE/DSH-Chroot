@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # service.sh —— 壳的**唯一执行者**（ADR-013 决定 A）
 #
-# 动词: boot | start | stop | restart | status | bootstrap [--offline] | install <file> | logs [--tail N] | help
+# 动词: boot | start | stop | restart | status | bootstrap [--offline] | install <file> | logs [--tail N] | diag | help
 # 退出码: 0 成功 · 10 已是当前状态 · 20 停止失败 · 30 payload 缺失/校验失败 · 40 切换失败 · 50 版本闸门拒绝
 #         · 60 运行时未就绪（容器起不来 / dsh 没在超时内报出端口；ADR-029）
 #
@@ -610,6 +610,160 @@ do_logs() {
     tail -n "$_n" "$LOG_FILE"; mark "LOGS ok"; return 0
 }
 
+# ---------- diag：把「证据 → 结论」搬到设备侧（ADR-030） ----------
+# 退出码: 0 没发现已知问题 / 1 命中了已知问题 / 2 无法判读（缺 lib/errors.sh）
+# 纪律: 只读 —— 不改任何状态、不起进程、不 mount/umount。
+DIAG_HIT=""
+
+diag_add() {
+    case " $DIAG_HIT " in
+        *" $1 "*) ;;
+        *) DIAG_HIT="$DIAG_HIT${DIAG_HIT:+ }$1" ;;
+    esac
+}
+
+diag_has() {
+    case " $DIAG_HIT " in
+        *" $1 "*) return 0 ;;
+    esac
+    return 1
+}
+
+do_diag() {
+    _lib=""
+    for _cand in "$SELF_DIR/lib/errors.sh" "$DSH_ROOT/lib/errors.sh"; do
+        [ -f "$_cand" ] && { _lib=$_cand; break; }
+    done
+    if [ -z "$_lib" ]; then
+        log "diag: 找不到 lib/errors.sh（模块装坏了？）"
+        mark "DIAG no-table"
+        return 2
+    fi
+    . "$_lib"
+    if ! command -v emit_errors >/dev/null 2>&1; then
+        log "diag: lib/errors.sh 是旧格式（没有 emit_errors）——重新生成"
+        mark "DIAG no-table"
+        return 2
+    fi
+
+    DIAG_HIT=""
+    _rf=$(rt_container_rootfs)
+    echo "== 被测对象 =="
+    printf 'root      : %s\n' "$DSH_ROOT"
+    printf 'rootfs    : %s\n' "$_rf"
+    printf 'runtime   : %s\n' "$DSH_RUNTIME"
+    echo
+    echo "== 证据 =="
+
+    # 1) payload / 层就绪  → E-L3S-PAY-001
+    _al=$(active_layer) || _al=""
+    if [ -z "$_al" ]; then
+        diag_add E-L3S-PAY-001
+        printf 'payload   : ✗ active 为空（从未 bootstrap）\n'
+    elif ! layer_ok "$_al"; then
+        diag_add E-L3S-PAY-001
+        printf 'payload   : ✗ 层 %s 不完整（缺目录或 .layer）\n' "$_al"
+    elif ! node_ok; then
+        diag_add E-L3S-PAY-001
+        printf 'payload   : ✗ Node 层 base/node 不完整\n'
+    else
+        printf 'payload   : ✓ node + layer %s\n' "$_al"
+    fi
+
+    if [ -d "$_rf" ]; then
+        # 2) /dev 可信  → E-L1C-DEV-001
+        if [ -c "$_rf/dev/null" ]; then
+            printf 'dev/null  : ✓ 字符设备\n'
+        else
+            diag_add E-L1C-DEV-001
+            printf 'dev/null  : ✗ 不是字符设备（%s）—— 哈希再对，功能也是死的\n' \
+                "$(ls -ld "$_rf/dev/null" 2>/dev/null | cut -d' ' -f1)"
+        fi
+
+        # 3) devpts  → E-L1C-PTY-001
+        if grep -q " $_rf/dev/pts " /proc/mounts 2>/dev/null; then
+            printf 'devpts    : ✓ 已挂载\n'
+        elif [ -d "$_rf/dev/pts" ] && [ -c "$_rf/dev/ptmx" ]; then
+            printf 'devpts    : - 目录与 ptmx 都在，但未见挂载（容器没起时正常）\n'
+        else
+            diag_add E-L1C-PTY-001
+            printf 'devpts    : ✗ 缺 /dev/pts 或 /dev/ptmx（PTY 会报 out of pty devices）\n'
+        fi
+
+        # 4) 层只读  → E-L1C-MNT-001
+        if grep -q " $_rf$RT_DSH " /proc/mounts 2>/dev/null; then
+            if rt_is_ro "$_rf$RT_DSH"; then
+                printf 'layers    : ✓ current 是 ro\n'
+            else
+                diag_add E-L1C-MNT-001
+                printf 'layers    : ✗ current 是 rw（完整性保护缺失）\n'
+            fi
+        else
+            printf 'layers    : - current 未挂载（容器没起时正常）\n'
+        fi
+    else
+        diag_add E-L1C-DEV-001
+        printf 'dev/null  : ✗ rootfs 不存在（%s）\n' "$_rf"
+    fi
+
+    # 5) 版本闸门  → E-L3S-VER-001
+    _vs=$(version_state 2>/dev/null || echo "-")
+    case $_vs in
+        ok*) printf 'version   : ✓ %s\n' "$_vs" ;;
+        *) diag_add E-L3S-VER-001; printf 'version   : ✗ %s\n' "$_vs" ;;
+    esac
+
+    # 6) 端口 / 运行态  → E-L2D-PORT-001
+    if [ -f "$RUN_DIR/dsh.json" ]; then
+        _pt=$(json_num "$RUN_DIR/dsh.json" port)
+        if [ -n "$_pt" ]; then
+            printf 'port      : ✓ %s\n' "$_pt"
+        else
+            diag_add E-L2D-PORT-001
+            printf 'port      : ✗ run/dsh.json 里没有 port\n'
+        fi
+    elif pid_alive; then
+        diag_add E-L2D-PORT-001
+        printf 'port      : ✗ 进程在（pid %s）却没有 run/dsh.json\n' "$(pid_of)"
+    else
+        printf 'port      : - 未运行（没在跑就不算故障）\n'
+    fi
+    echo
+
+    if [ -z "$DIAG_HIT" ]; then
+        echo "== 结论 =="
+        echo "没发现已知故障（表里任何一条都没命中）。"
+        mark "DIAG clean"
+        return 0
+    fi
+
+    echo "== 命中 =="
+    emit_errors | while IFS='|' read -r _c _l _st _t _exp _fix _probe; do
+        [ -n "$_c" ] || continue
+        diag_has "$_c" || continue
+        printf '%s [%s/%s]\n' "$_c" "$_l" "$_st"
+        printf '  症状 : %s\n' "$_t"
+        printf '  处置 : %s\n' "$_fix"
+        printf '  自证 : %s  → 期望 %s\n' "$_probe" "$_exp"
+    done
+    echo
+
+    echo "== 结论 =="
+    emit_signatures | while IFS='|' read -r _sid _when _vd _nx; do
+        [ -n "$_sid" ] || continue
+        _miss=""
+        for _c in $_when; do
+            diag_has "$_c" || _miss=1
+        done
+        [ -n "$_miss" ] && continue
+        printf '%s：%s\n' "$_sid" "$_vd"
+        printf '下一步：%s\n' "$_nx"
+    done
+    echo "（只列命中的签名；一条都没列 = 这些证据的组合还没登记，按「自证」逐条确认，别猜）"
+    mark "DIAG hit"
+    return 1
+}
+
 usage() { sed -n '2,18p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; mark "HELP ok"; return 0; }
 
 main() {
@@ -629,6 +783,7 @@ main() {
             [ "$_rc" -eq 20 ] && { log "restart 中止：停不掉"; return 20; }
             do_start ;;
         status) do_status ;;
+        diag) do_diag ;;
         bootstrap) do_bootstrap "$@" ;;
         install) do_install "$@" ;;
         logs) do_logs "$@" ;;

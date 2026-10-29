@@ -18,7 +18,8 @@
 # 动词（与 ADR-013/ADR-019 对齐；未知动词直接拒绝，不猜）:
 #     boot | start | stop | restart | status | logs [--tail N]
 #     bootstrap [--offline] | install <file> | help
-#     diag | repair | rebuild | upgrade <ver> | purge      ← 尚未实现，会明确报出来
+#     diag
+#     repair | rebuild | upgrade <ver> | purge      ← 尚未实现，会明确报出来
 #
 # cgroup 搬家是 **best-effort + 必须报实情**（ADR-019 决定 B）：
 #     搬成功 -> 打印"已搬"；搬不动 -> 打印失败原因；**绝不假装成功**。
@@ -111,15 +112,15 @@ cgroup_move() {
 # ---------- 动词校验 ----------
 _verb=${1:-}
 case $_verb in
-    boot|start|stop|restart|status|bootstrap|install|logs|help|--help|-h|"") ;;
-    diag|repair|rebuild|upgrade|purge)
+    boot|start|stop|restart|status|bootstrap|install|logs|diag|help|--help|-h|"") ;;
+    repair|rebuild|upgrade|purge)
         audit "$_verb"
         printf 'dsh-ctl: 动词 "%s" 尚未实现（ADR-019 里已定，实现排在 service.sh 之后）\n' "$_verb" >&2
         exit 2
         ;;
     *)
         audit "ERROR:$_verb"
-        printf 'dsh-ctl: 未知动词 "%s"。可用: boot start stop restart status bootstrap install logs help\n' "$_verb" >&2
+        printf 'dsh-ctl: 未知动词 "%s"。可用: boot start stop restart status bootstrap install logs diag help\n' "$_verb" >&2
         exit 2
         ;;
 esac
@@ -128,7 +129,9 @@ esac
 audit "$_verb ${2-}"
 
 # ---------- cgroup 搬家只对手动路径有意义；boot 路径跳过 ----------
-if [ "$_verb" != "boot" ]; then
+# diag 也必须跳过：它的契约是**只读**（ADR-030）——搬家会改写本进程的 cgroup 归属，
+# 那是「改状态」。诊断命令不该在被诊断的系统上留下痕迹。
+if [ "$_verb" != "boot" ] && [ "$_verb" != "diag" ]; then
     cgroup_move
 fi
 

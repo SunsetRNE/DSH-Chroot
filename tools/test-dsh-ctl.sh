@@ -45,7 +45,7 @@ run_has "start 无 payload -> 30（退出码原样透传）" 30 "payload" sh "$C
 echo
 echo "== 2) 参数校验（不猜）"
 run_has "未知动词 -> 2" 2 "未知动词" sh "$CTL" 乱来
-run_has "未实现动词 -> 2，且明确报出来" 2 "尚未实现" sh "$CTL" diag
+run_has "未实现动词 -> 2，且明确报出来" 2 "尚未实现" sh "$CTL" repair
 run_has "rebuild 也未实现" 2 "尚未实现" sh "$CTL" rebuild
 
 echo
